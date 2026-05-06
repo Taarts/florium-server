@@ -1,5 +1,5 @@
 const { Resend } = require("resend");
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = new Resend(process.env.RESEND_API_KEY || 'placeholder');
 const { bookingConfirmationHtml }  = require("./emails/bookingConfirmation");
 const { workshopConfirmationHtml } = require("./emails/workshopConfirmation");
 const { privatePassPromptHtml } = require('./emails/privatePassPrompt')
