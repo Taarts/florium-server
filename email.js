@@ -1,52 +1,10 @@
 const { Resend } = require("resend");
-const resend = new Resend(process.env.RESEND_API_KEY || 'placeholder');
-const { bookingConfirmationHtml }  = require("./emails/bookingConfirmation");
-const { workshopConfirmationHtml } = require("./emails/workshopConfirmation");
-const { privatePassPromptHtml } = require('./emails/privatePassPrompt')
-const fs = require("fs");
-const { waiverConfirmationHtml } = require('./emails/waiverConfirmation');
- 
+const resend = new Resend(process.env.RESEND_API_KEY);
+const { bookingConfirmationHtml } = require("./emails/bookingConfirmation");
+
 // ── Class details lookup ───────────────────────────────────
 // Mirrors recurringClasses from data.js — single source of truth
 // TODO: once classes are stored in MongoDB, fetch from DB instead
-
-const { passReminderHtml } = require('./emails/passReminder');
-
-async function sendPassReminderEmail({ studentEmail, studentName, passType, classesRemaining, expiresAt }) {
-  const html = passReminderHtml({ studentName, passType, classesRemaining, expiresAt });
-  await resend.emails.send({
-    from: 'Iyengar Yoga St. Petersburg <info@iy-sp.org>',
-    to: studentEmail,
-    subject: 'Your pass — time to top up',
-    html,
-  });
-}
-async function sendWaiverEmail({ studentName, studentEmail, signedAt, pdfPath }) {
-  const html = waiverConfirmationHtml({ studentName, signedAt });
-
-  // Build attachments array if PDF exists
-  const attachments = (pdfPath && fs.existsSync(pdfPath))
-    ? [{
-        filename: "liability-waiver.pdf",
-        content: fs.readFileSync(pdfPath).toString("base64"),
-      }]
-    : [];
-
-  // Send to student
-  await resend.emails.send({
-    from:    FROM_EMAIL,
-    to:      studentEmail,
-    replyTo: REPLY_TO,
-    subject: `Your signed liability waiver — Iyengar Yoga St. Petersburg`,
-    html,
-    attachments,
-  });
-}
-module.exports = { 
-  // ...existing exports
-  sendPassReminderEmail 
-};
-
 const CLASS_DETAILS = {
   cls_mon: { title: "Iyengar Yoga",          day: "Monday",    time: "10:00 AM", duration: 90, venue: "Journey into Fitness, 1799 Central Ave, St. Petersburg FL 33712", online: false },
   cls_wed: { title: "Iyengar Yoga",          day: "Wednesday", time: "6:00 PM",  duration: 75, venue: "Journey into Fitness, 1799 Central Ave, St. Petersburg FL 33712", online: false },
@@ -54,12 +12,12 @@ const CLASS_DETAILS = {
   cls_sat: { title: "Iyengar Yoga — Online", day: "Saturday",  time: "8:15 AM",  duration: 90, online: true },
   cls_sun: { title: "Iyengar Yoga — Online", day: "Sunday",    time: "10:00 AM", duration: 90, online: true },
 };
- 
+
 const FROM_EMAIL  = "Iyengar Yoga St. Petersburg <info@iy-sp.org>";
 const REPLY_TO    = "info@iy-sp.org";
 const PRICING_URL = "https://iy-sp.org/pricing";
 const MY_BOOKINGS = "https://iy-sp.com/my-bookings";
- 
+
 // ── Shared HTML helpers ────────────────────────────────────
 function formatDate(dateStr) {
   const d = new Date(dateStr + "T12:00:00");
@@ -67,7 +25,7 @@ function formatDate(dateStr) {
     weekday: "long", month: "long", day: "numeric", year: "numeric"
   });
 }
- 
+
 function formatPaymentType(type) {
   const labels = {
     dropin:    "Drop-in",
@@ -78,7 +36,7 @@ function formatPaymentType(type) {
   };
   return labels[type] || type;
 }
- 
+
 // Shared outer wrapper — keeps all emails visually consistent
 function emailShell(headerHtml, bodyHtml) {
   return `
@@ -126,7 +84,7 @@ function emailShell(headerHtml, bodyHtml) {
 </body>
 </html>`;
 }
- 
+
 // Plum banner — reused across confirmation, reschedule, cancellation emails
 function bannerHtml(label, heading) {
   return `
@@ -139,7 +97,7 @@ function bannerHtml(label, heading) {
     </td>
   </tr>`;
 }
- 
+
 // Class detail table rows — used in confirmation + reschedule emails
 function classDetailRows(cls, formattedDate, extraRows = "") {
   const locationRow = cls.online
@@ -151,7 +109,7 @@ function classDetailRows(cls, formattedDate, extraRows = "") {
          <td style="padding:10px 20px; color:#9b8fa8; font-size:13px; width:38%;">Location</td>
          <td style="padding:10px 20px; font-size:14px; color:#2d2d3e;">${cls.venue}</td>
        </tr>`;
- 
+
   return `
   <table width="100%" cellpadding="0" cellspacing="0"
     style="border:1px solid #e8e0ec; border-radius:8px; overflow:hidden; margin-bottom:24px;">
@@ -175,21 +133,21 @@ function classDetailRows(cls, formattedDate, extraRows = "") {
     ${extraRows}
   </table>`;
 }
- 
+
 // ── Booking confirmation ───────────────────────────────────
 async function sendBookingConfirmation({ name, email, classId, date, paymentType, classesRemaining, bookingId }) {
   const cls           = CLASS_DETAILS[classId];
   const formattedDate = formatDate(date);
- 
+
   if (!cls) {
     console.error(`Unknown classId: ${classId}`);
     return;
   }
- 
+
   const html = bookingConfirmationHtml({
     name, cls, formattedDate, paymentType, classesRemaining, formatPaymentType, bookingId,
   });
- 
+
   try {
     await resend.emails.send({
       from:    FROM_EMAIL,
@@ -203,10 +161,34 @@ async function sendBookingConfirmation({ name, email, classId, date, paymentType
     console.error("✗ Email send failed:", err.message);
   }
 }
- 
+
 // ── Workshop confirmation ──────────────────────────────────
-async function sendWorkshopConfirmationEmail({ name, email, workshopTitle, sessions, totalPrice, workshopId }) {
-  const html = workshopConfirmationHtml({ name, workshopTitle, sessions, totalPrice, workshopId });
+async function sendWorkshopConfirmationEmail({ name, email, workshopTitle, sessions, totalPrice }) {
+  const sessionRows = sessions.map(s =>
+    `<tr>
+      <td style="padding:6px 12px;">${s.date}</td>
+      <td style="padding:6px 12px;">${s.label}</td>
+      <td style="padding:6px 12px;">${s.time}</td>
+    </tr>`
+  ).join("");
+
+  const html = `
+    <p>Hi ${name},</p>
+    <p>Your booking for <strong>${workshopTitle}</strong> is confirmed.</p>
+    <table style="border-collapse:collapse;width:100%;">
+      <thead>
+        <tr>
+          <th style="padding:6px 12px;text-align:left;">Date</th>
+          <th style="padding:6px 12px;text-align:left;">Session</th>
+          <th style="padding:6px 12px;text-align:left;">Time</th>
+        </tr>
+      </thead>
+      <tbody>${sessionRows}</tbody>
+    </table>
+    <p><strong>Total paid: $${totalPrice}</strong></p>
+    <p>See you on the mat!</p>
+  `;
+
   try {
     await resend.emails.send({
       from:    FROM_EMAIL,
@@ -220,13 +202,14 @@ async function sendWorkshopConfirmationEmail({ name, email, workshopTitle, sessi
     console.error("✗ Email send failed:", err.message);
   }
 }
+
 // ── Cancellation email ─────────────────────────────────────
 // creditCode — present when admin cancelled a drop-in booking (class credit issued)
 //            — null for pass holders (credit restored to pass) or student self-cancel
 async function sendCancellationEmail({ name, email, classId, date, creditCode = null }) {
   const cls           = CLASS_DETAILS[classId];
   const formattedDate = formatDate(date);
- 
+
   const creditBlock = creditCode
     ? `<div style="margin:20px 0; padding:16px 20px; background:#fdf8ff;
                    border-left:3px solid #e58684; border-radius:0 6px 6px 0;">
@@ -242,7 +225,7 @@ async function sendCancellationEmail({ name, email, classId, date, creditCode = 
     : `<p style="margin:16px 0 0; font-size:13px; color:#6b6b8a; line-height:1.6;">
          If you used a pass for this booking, your class credit has been restored.
        </p>`;
- 
+
   const bodyHtml = `
     <p style="margin:0 0 16px; font-size:15px; color:#4a4a6a; line-height:1.6;">
       Hi ${name.split(" ")[0]}, your booking for
@@ -260,9 +243,9 @@ async function sendCancellationEmail({ name, email, classId, date, creditCode = 
              font-size:14px; font-weight:500;">
       Book another class →
     </a>`;
- 
+
   const html = emailShell(bannerHtml("Iyengar Yoga · St. Petersburg", "Booking cancelled"), bodyHtml);
- 
+
   try {
     await resend.emails.send({
       from:    FROM_EMAIL,
@@ -276,7 +259,7 @@ async function sendCancellationEmail({ name, email, classId, date, creditCode = 
     console.error("✗ Cancellation email failed:", err.message);
   }
 }
- 
+
 // ── Class cancelled by studio ──────────────────────────────
 // Sent to all students when admin cancels an entire class date.
 // Pass holders: credit restored to pass (handled in route, noted in email).
@@ -284,7 +267,7 @@ async function sendCancellationEmail({ name, email, classId, date, creditCode = 
 async function sendClassCancelledEmail({ name, email, classId, date, creditCode = null }) {
   const cls           = CLASS_DETAILS[classId];
   const formattedDate = formatDate(date);
- 
+
   const creditBlock = creditCode
     ? `<div style="margin:20px 0; padding:16px 20px; background:#fdf8ff;
                    border-left:3px solid #e58684; border-radius:0 6px 6px 0;">
@@ -300,7 +283,7 @@ async function sendClassCancelledEmail({ name, email, classId, date, creditCode 
     : `<p style="margin:16px 0 0; font-size:13px; color:#6b6b8a; line-height:1.6;">
          Your class credit has been restored to your pass.
        </p>`;
- 
+
   const bodyHtml = `
     <p style="margin:0 0 16px; font-size:15px; color:#4a4a6a; line-height:1.6;">
       Hi ${name.split(" ")[0]}, unfortunately we've had to cancel
@@ -318,9 +301,9 @@ async function sendClassCancelledEmail({ name, email, classId, date, creditCode 
              font-size:14px; font-weight:500;">
       View my bookings →
     </a>`;
- 
+
   const html = emailShell(bannerHtml("Iyengar Yoga · St. Petersburg", "Class cancelled"), bodyHtml);
- 
+
   try {
     await resend.emails.send({
       from:    FROM_EMAIL,
@@ -334,7 +317,7 @@ async function sendClassCancelledEmail({ name, email, classId, date, creditCode 
     console.error("✗ Class cancelled email failed:", err.message);
   }
 }
- 
+
 // ── Reschedule email ───────────────────────────────────────
 // Sent to student when a booking is moved to a new class/date,
 // either by admin or by the student themselves via My Bookings.
@@ -343,12 +326,12 @@ async function sendRescheduleEmail({ name, email, classId, date, oldClassId, old
   const oldCls        = CLASS_DETAILS[oldClassId];
   const formattedDate = formatDate(date);
   const formattedOld  = formatDate(oldDate);
- 
+
   if (!cls) {
     console.error(`sendRescheduleEmail: unknown classId ${classId}`);
     return;
   }
- 
+
   const wasRow = `
     <tr style="background:#fdfbfe; border-top:1px solid #f0eaf4;">
       <td style="padding:10px 20px; color:#9b8fa8; font-size:13px; width:38%;">Previously</td>
@@ -356,16 +339,16 @@ async function sendRescheduleEmail({ name, email, classId, date, oldClassId, old
         ${oldCls?.title ?? oldClassId}, ${formattedOld}
       </td>
     </tr>`;
- 
+
   const paymentRow = `
     <tr style="background:#fdfbfe; border-top:1px solid #f0eaf4;">
       <td colspan="2" style="padding:10px 20px; font-size:13px; color:#6b6b8a;">
         Your original payment has been carried over — no charge or refund applies.
       </td>
     </tr>`;
- 
+
   const detailTable = classDetailRows(cls, formattedDate, wasRow + paymentRow);
- 
+
   const manageLinkBlock = bookingId
     ? `<p style="margin:20px 0 0; font-size:13px; color:#9b8fa8;">
          Need to make another change?
@@ -376,7 +359,7 @@ async function sendRescheduleEmail({ name, email, classId, date, oldClassId, old
             style="color:#842953; text-decoration:none;">Cancel</a>
        </p>`
     : "";
- 
+
   const bodyHtml = `
     <p style="margin:0 0 24px; font-size:15px; color:#4a4a6a; line-height:1.6;">
       Hi ${name.split(" ")[0]}, your booking has been moved. Here are your updated class details:
@@ -387,9 +370,9 @@ async function sendRescheduleEmail({ name, email, classId, date, oldClassId, old
       <a href="mailto:info@iy-sp.com" style="color:#842953; text-decoration:none;">info@iy-sp.com</a>.
     </p>
     ${manageLinkBlock}`;
- 
+
   const html = emailShell(bannerHtml("Booking updated", "You're rescheduled!"), bodyHtml);
- 
+
   try {
     await resend.emails.send({
       from:    FROM_EMAIL,
@@ -403,20 +386,6 @@ async function sendRescheduleEmail({ name, email, classId, date, oldClassId, old
     console.error("✗ Reschedule email failed:", err.message);
   }
 }
- async function sendPrivatePassPromptEmail({ studentName, studentEmail, className, date, time, duration }) {
-  const html = privatePassPromptHtml({ studentName, className, date, time, duration });
-
-  const dateObj = new Date(`${date}T12:00:00`);
-  const shortDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-  await resend.emails.send({
-    from: 'Iyengar Yoga St. Petersburg <info@iy-sp.org>', // TODO: switch to iy-sp.com pre-launch
-    to: studentEmail,
-    replyTo: 'info@iy-sp.com',
-    subject: `Private class on ${shortDate} — pass required to confirm`,
-    html,
-  });
-}
 
 module.exports = {
   sendBookingConfirmation,
@@ -424,7 +393,4 @@ module.exports = {
   sendCancellationEmail,
   sendClassCancelledEmail,
   sendRescheduleEmail,
-  sendPrivatePassPromptEmail,
-  sendWaiverEmail,
 };
- 
