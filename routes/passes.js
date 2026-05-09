@@ -171,6 +171,63 @@ router.patch("/:id", adminAuth, async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+
+});
+
+// ── POST /api/passes/purchase (public) ────────────────────
+// Student purchases a pass via Stripe. Creates pass + sends email.
+router.post("/purchase", async (req, res, next) => {
+  try {
+    const { name, email, passType, stripePaymentId } = req.body;
+    if (!name || !email || !passType || !stripePaymentId)
+      return res.status(400).json({ error: "Missing required fields." });
+
+    const PASS_CONFIG = {
+      dropin: { classesTotal: 1,    expiryDays: null },
+      pass4:  { classesTotal: 4,    expiryDays: 60   },
+      pass8:  { classesTotal: 8,    expiryDays: 90   },
+    };
+
+    const config = PASS_CONFIG[passType];
+    if (!config)
+      return res.status(400).json({ error: "Invalid pass type." });
+
+    const code = "YOGA-" + Math.random().toString(36).slice(2, 6).toUpperCase();
+
+    let expiresAt = null;
+    if (config.expiryDays) {
+      expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + config.expiryDays);
+    }
+
+    const pass = await Pass.create({
+      code,
+      type:           passType,
+      studentEmail:   email.toLowerCase().trim(),
+      classesTotal:   config.classesTotal,
+      classesUsed:    0,
+      expiresAt,
+      active:         true,
+      stripePaymentId,
+    });
+
+    // Send confirmation email with pass code
+    const { sendPassPurchaseEmail } = require("../email");
+    await sendPassPurchaseEmail({ name, email, pass });
+
+    res.status(201).json({
+      success: true,
+      pass: {
+        code:             pass.code,
+        type:             pass.type,
+        classesTotal:     pass.classesTotal,
+        classesRemaining: pass.classesRemaining,
+        expiresAt:        pass.expiresAt,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;

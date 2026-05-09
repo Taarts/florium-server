@@ -148,6 +148,8 @@ async function sendBookingConfirmation({ name, email, classId, date, paymentType
     name, cls, formattedDate, paymentType, classesRemaining, formatPaymentType, bookingId,
   });
 
+  console.log("Sending email to:", email, "API key starts with:", process.env.RESEND_API_KEY?.slice(0, 8));
+
   try {
     await resend.emails.send({
       from:    FROM_EMAIL,
@@ -386,6 +388,76 @@ async function sendRescheduleEmail({ name, email, classId, date, oldClassId, old
     console.error("✗ Reschedule email failed:", err.message);
   }
 }
+// ── Pass purchase confirmation ─────────────────────────────
+async function sendPassPurchaseEmail({ name, email, pass }) {
+  const PASS_LABELS = {
+    dropin: "Single Class",
+    pass4:  "4-Class Pass",
+    pass8:  "8-Class Pass",
+  };
+
+  const expiryLine = pass.expiresAt
+    ? `<tr style="background:#fdfbfe; border-top:1px solid #f0eaf4;">
+         <td style="padding:10px 20px; color:#9b8fa8; font-size:13px; width:38%;">Expires</td>
+         <td style="padding:10px 20px; font-size:14px; color:#2d2d3e;">
+           ${pass.expiresAt.toLocaleDateString("en-US", { month:"long", day:"numeric", year:"numeric" })}
+         </td>
+       </tr>`
+    : "";
+
+  const bodyHtml = `
+    <p style="margin:0 0 24px; font-size:15px; color:#4a4a6a; line-height:1.6;">
+      Hi ${name.split(" ")[0]}, your pass is ready. Use the code below when booking a class.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="border:1px solid #e8e0ec; border-radius:8px; overflow:hidden; margin-bottom:24px;">
+      <tr style="background:#faf7fb;">
+        <td colspan="2" style="padding:12px 20px; font-size:11px; font-weight:600;
+            color:#842953; letter-spacing:0.1em; text-transform:uppercase;">Your Pass</td>
+      </tr>
+      <tr style="border-top:1px solid #e8e0ec;">
+        <td style="padding:10px 20px; color:#9b8fa8; font-size:13px; width:38%;">Type</td>
+        <td style="padding:10px 20px; font-size:14px; color:#2d2d3e; font-weight:500;">
+          ${PASS_LABELS[pass.type] ?? pass.type}
+        </td>
+      </tr>
+      <tr style="background:#fdfbfe; border-top:1px solid #f0eaf4;">
+        <td style="padding:10px 20px; color:#9b8fa8; font-size:13px;">Classes</td>
+        <td style="padding:10px 20px; font-size:14px; color:#2d2d3e;">${pass.classesTotal}</td>
+      </tr>
+      ${expiryLine}
+      <tr style="border-top:1px solid #f0eaf4;">
+        <td style="padding:10px 20px; color:#9b8fa8; font-size:13px;">Pass code</td>
+        <td style="padding:10px 20px; font-size:20px; font-weight:700; color:#842953;
+                    letter-spacing:0.08em;">${pass.code}</td>
+      </tr>
+    </table>
+    <p style="margin:0; font-size:13px; color:#6b6b8a; line-height:1.6;">
+      Questions? Reply to this email or contact
+      <a href="mailto:info@iy-sp.com" style="color:#842953; text-decoration:none;">info@iy-sp.com</a>.
+    </p>
+    <a href="${PRICING_URL}"
+      style="display:inline-block; margin-top:20px; background:#842953; color:white;
+             padding:10px 24px; border-radius:6px; text-decoration:none;
+             font-size:14px; font-weight:500;">
+      Book a class →
+    </a>`;
+
+  const html = emailShell(bannerHtml("Iyengar Yoga · St. Petersburg", "Your pass is confirmed!"), bodyHtml);
+
+  try {
+    await resend.emails.send({
+      from:    FROM_EMAIL,
+      to:      email,
+      replyTo: REPLY_TO,
+      subject: `Your ${PASS_LABELS[pass.type] ?? "pass"} — ${pass.code}`,
+      html,
+    });
+    console.log(`✓ Pass purchase email sent to ${email}`);
+  } catch (err) {
+    console.error("✗ Pass purchase email failed:", err.message);
+  }
+}
 
 module.exports = {
   sendBookingConfirmation,
@@ -393,4 +465,5 @@ module.exports = {
   sendCancellationEmail,
   sendClassCancelledEmail,
   sendRescheduleEmail,
+  sendPassPurchaseEmail,  
 };
