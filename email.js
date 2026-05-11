@@ -459,6 +459,7 @@ async function sendPassPurchaseEmail({ name, email, pass }) {
   }
 }
 
+
 module.exports = {
   sendBookingConfirmation,
   sendWorkshopConfirmationEmail,
