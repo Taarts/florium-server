@@ -1,5 +1,5 @@
-const { Resend } = require("resend");
-const resend = new Resend(process.env.RESEND_API_KEY);
+const { BrevoClient } = require("@getbrevo/brevo");
+const brevoClient = new BrevoClient({ apiKey: process.env.BREVO_API_KEY });
 const { bookingConfirmationHtml } = require("./emails/bookingConfirmation");
 
 // ── Class details lookup ───────────────────────────────────
@@ -7,14 +7,17 @@ const { bookingConfirmationHtml } = require("./emails/bookingConfirmation");
 // TODO: once classes are stored in MongoDB, fetch from DB instead
 const CLASS_DETAILS = {
   cls_mon: { title: "Iyengar Yoga",          day: "Monday",    time: "10:00 AM", duration: 90, venue: "Journey into Fitness, 1799 Central Ave, St. Petersburg FL 33712", online: false },
-  cls_wed: { title: "Iyengar Yoga",          day: "Wednesday", time: "6:00 PM",  duration: 75, venue: "Journey into Fitness, 1799 Central Ave, St. Petersburg FL 33712", online: false },
+  cls_tue_pm:   { title: "Pilates Fundamentals", day: "Tuesday",   time: "6:00 PM",  duration: 60, venue: "Journey into Fitness, 1799   Central Ave, St. Petersburg FL 33712" },
+  cls_wed_eve:  { title: "Yin & Meditation",     day: "Wednesday", time: "7:00 PM",  duration: 75, venue: "Journey into Fitness, 1799 Central Ave, St. Petersburg FL 33712" },
+  cls_thu:      { title: "Power Pilates",        day: "Thursday",  time: "7:00 AM",  duration: 60, venue: "Journey into Fitness, 1799 Central Ave, St. Petersburg FL 33712" },
   cls_fri: { title: "Iyengar Yoga",          day: "Friday",    time: "10:00 AM", duration: 90, venue: "Journey into Fitness, 1799 Central Ave, St. Petersburg FL 33712", online: false },
-  cls_sat: { title: "Iyengar Yoga — Online", day: "Saturday",  time: "8:15 AM",  duration: 90, online: true },
-  cls_sun: { title: "Iyengar Yoga — Online", day: "Sunday",    time: "10:00 AM", duration: 90, online: true },
+  cls_sat_online: { title: "Iyengar Yoga — Online", day: "Saturday",  time: "8:15 AM",  duration: 90, venue: "venue_online" },
+  cls_sun_online: { title: "Iyengar Yoga — Online", day: "Sunday",    time: "10:00 AM", duration: 90, venue: "venue_online" },
 };
 
-const FROM_EMAIL  = "Iyengar Yoga St. Petersburg <info@iy-sp.org>";
-const REPLY_TO    = "info@iy-sp.org";
+const FROM_EMAIL  = "info@florium.live";
+const FROM_NAME   = "Florium.Live";
+const REPLY_TO    = "info@florium.live";
 const PRICING_URL = "https://iy-sp.org/pricing";
 const MY_BOOKINGS = "https://iy-sp.com/my-bookings";
 
@@ -148,15 +151,15 @@ async function sendBookingConfirmation({ name, email, classId, date, paymentType
     name, cls, formattedDate, paymentType, classesRemaining, formatPaymentType, bookingId,
   });
 
-  console.log("Sending email to:", email, "API key starts with:", process.env.RESEND_API_KEY?.slice(0, 8));
+  console.log("Sending email to:", email, "API key starts with:", process.env.BREVO_API_KEY?.slice(0, 8));
 
-  try {
-    await resend.emails.send({
-      from:    FROM_EMAIL,
-      to:      email,
-      replyTo: REPLY_TO,
-      subject: `Booking confirmed — ${cls.title}, ${formattedDate}`,
-      html,
+try {
+    await brevoClient.transactionalEmails.sendTransacEmail({
+      sender:      { name: FROM_NAME, email: FROM_EMAIL },
+      to:          [{ email }],
+      replyTo:     { email: REPLY_TO },
+      subject:     `Booking confirmed — ${cls.title}, ${formattedDate}`,
+      htmlContent: html,
     });
     console.log(`✓ Confirmation email sent to ${email}`);
   } catch (err) {
@@ -192,13 +195,13 @@ async function sendWorkshopConfirmationEmail({ name, email, workshopTitle, sessi
   `;
 
   try {
-    await resend.emails.send({
-      from:    FROM_EMAIL,
-      to:      email,
-      replyTo: REPLY_TO,
-      subject: `Booking confirmed — ${workshopTitle}`,
-      html,
-    });
+  await brevoClient.transactionalEmails.sendTransacEmail({
+  sender:      { name: FROM_NAME, email: FROM_EMAIL },
+  to:          [{ email }],
+  replyTo:     { email: REPLY_TO },
+  subject:     `Booking confirmed — ${workshopTitle}`,
+  htmlContent: html,
+});
     console.log(`✓ Workshop confirmation email sent to ${email}`);
   } catch (err) {
     console.error("✗ Email send failed:", err.message);
@@ -249,14 +252,13 @@ async function sendCancellationEmail({ name, email, classId, date, creditCode = 
   const html = emailShell(bannerHtml("Iyengar Yoga · St. Petersburg", "Booking cancelled"), bodyHtml);
 
   try {
-    await resend.emails.send({
-      from:    FROM_EMAIL,
-      to:      email,
-      replyTo: REPLY_TO,
-      subject: `Booking cancelled — ${cls?.title ?? classId}, ${formattedDate}`,
-      html,
-    });
-    console.log(`✓ Cancellation email sent to ${email}`);
+await brevoClient.transactionalEmails.sendTransacEmail({
+  sender:      { name: FROM_NAME, email: FROM_EMAIL },
+  to:          [{ email }],
+  replyTo:     { email: REPLY_TO },
+  subject:     `Booking cancelled — ${cls?.title ?? classId}, ${formattedDate}`,
+  htmlContent: html,
+});
   } catch (err) {
     console.error("✗ Cancellation email failed:", err.message);
   }
@@ -307,14 +309,13 @@ async function sendClassCancelledEmail({ name, email, classId, date, creditCode 
   const html = emailShell(bannerHtml("Iyengar Yoga · St. Petersburg", "Class cancelled"), bodyHtml);
 
   try {
-    await resend.emails.send({
-      from:    FROM_EMAIL,
-      to:      email,
-      replyTo: REPLY_TO,
-      subject: `Class cancelled — ${cls?.title ?? classId}, ${formattedDate}`,
-      html,
-    });
-    console.log(`✓ Class cancelled email sent to ${email}`);
+  await brevoClient.transactionalEmails.sendTransacEmail({
+  sender:      { name: FROM_NAME, email: FROM_EMAIL },
+  to:          [{ email }],
+  replyTo:     { email: REPLY_TO },
+  subject:     `Class cancelled — ${cls?.title ?? classId}, ${formattedDate}`,
+  htmlContent: html,
+});
   } catch (err) {
     console.error("✗ Class cancelled email failed:", err.message);
   }
@@ -376,14 +377,13 @@ async function sendRescheduleEmail({ name, email, classId, date, oldClassId, old
   const html = emailShell(bannerHtml("Booking updated", "You're rescheduled!"), bodyHtml);
 
   try {
-    await resend.emails.send({
-      from:    FROM_EMAIL,
-      to:      email,
-      replyTo: REPLY_TO,
-      subject: `Booking rescheduled — ${cls.title}, ${formattedDate}`,
-      html,
-    });
-    console.log(`✓ Reschedule email sent to ${email}`);
+   await brevoClient.transactionalEmails.sendTransacEmail({
+  sender:      { name: FROM_NAME, email: FROM_EMAIL },
+  to:          [{ email }],
+  replyTo:     { email: REPLY_TO },
+  subject:     `Booking rescheduled — ${cls.title}, ${formattedDate}`,
+  htmlContent: html,
+});
   } catch (err) {
     console.error("✗ Reschedule email failed:", err.message);
   }
@@ -446,14 +446,13 @@ async function sendPassPurchaseEmail({ name, email, pass }) {
   const html = emailShell(bannerHtml("Iyengar Yoga · St. Petersburg", "Your pass is confirmed!"), bodyHtml);
 
   try {
-    await resend.emails.send({
-      from:    FROM_EMAIL,
-      to:      email,
-      replyTo: REPLY_TO,
-      subject: `Your ${PASS_LABELS[pass.type] ?? "pass"} — ${pass.code}`,
-      html,
+    await brevoClient.transactionalEmails.sendTransacEmail({
+      sender:      { name: FROM_NAME, email: FROM_EMAIL },
+      to:          [{ email }],
+      replyTo:     { email: REPLY_TO },
+      subject:     `Your ${PASS_LABELS[pass.type] ?? "pass"} — ${pass.code}`,
+      htmlContent: html,
     });
-    console.log(`✓ Pass purchase email sent to ${email}`);
   } catch (err) {
     console.error("✗ Pass purchase email failed:", err.message);
   }
