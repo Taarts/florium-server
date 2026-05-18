@@ -5,7 +5,7 @@ const MY_BOOKINGS = "https://iy-sp.com/my-bookings";
  
 function bookingConfirmationHtml({ name, cls, formattedDate, paymentType, classesRemaining, formatPaymentType, bookingId }) {
  
-  const locationBlock = cls.online
+  const locationBlock = cls.venue === "venue_online"
     ? `
       <tr style="border-top:1px solid #f0eaf4;">
         <td style="padding:10px 20px; color:#9b8fa8; font-size:13px; width:38%;">Location</td>
@@ -32,7 +32,7 @@ function bookingConfirmationHtml({ name, cls, formattedDate, paymentType, classe
        </p>`
     : "";
  
-  const bringBlock = cls.online
+  const bringBlock = cls.venue === "venue_online"
     ? '<div style="margin:0 0 24px; padding:16px 20px; background:#fdf8ff; border-left:3px solid #e58684; border-radius:0 6px 6px 0;"><p style="margin:0 0 6px; font-size:11px; font-weight:600; color:#842953; letter-spacing:0.1em; text-transform:uppercase;">Getting ready</p><p style="margin:0; font-size:13px; color:#4a4a6a; line-height:1.7;">Mat, belt, and 2 bricks. For shoulder stand, 4\u20136 blankets are recommended. Your Zoom link is above \u2014 join a few minutes early to check your connection.</p></div>'
     : '<div style="margin:0 0 24px; padding:16px 20px; background:#fdf8ff; border-left:3px solid #e58684; border-radius:0 6px 6px 0;"><p style="margin:0 0 6px; font-size:11px; font-weight:600; color:#842953; letter-spacing:0.1em; text-transform:uppercase;">What to bring</p><p style="margin:0; font-size:13px; color:#4a4a6a; line-height:1.7;">Mat, belt, and 2 bricks. For shoulder stand, 4\u20136 blankets are recommended \u2014 alternatives are offered if needed.</p></div>';
  

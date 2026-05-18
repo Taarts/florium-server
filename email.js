@@ -100,7 +100,7 @@ function bannerHtml(label, heading) {
 
 // Class detail table rows — used in confirmation + reschedule emails
 function classDetailRows(cls, formattedDate, extraRows = "") {
-  const locationRow = cls.online
+  const locationRow = cls.venue === "venue_online"
     ? `<tr style="border-top:1px solid #f0eaf4;">
          <td style="padding:10px 20px; color:#9b8fa8; font-size:13px; width:38%;">Location</td>
          <td style="padding:10px 20px; font-size:14px; color:#2d2d3e;">Online via Zoom</td>
