@@ -8,6 +8,7 @@ const { bookingConfirmationHtml } = require("./emails/bookingConfirmation");
 const CLASS_DETAILS = {
   cls_mon: { title: "Iyengar Yoga",          day: "Monday",    time: "10:00 AM", duration: 90, venue: "Journey into Fitness, 1799 Central Ave, St. Petersburg FL 33712", online: false },
   cls_tue_pm:   { title: "Pilates Fundamentals", day: "Tuesday",   time: "6:00 PM",  duration: 60, venue: "Journey into Fitness, 1799   Central Ave, St. Petersburg FL 33712" },
+  cls_wed: { title: "Hatha Yoga", day: "Wednesday", time: "10:00 AM", duration: 90, venue: "Journey into Fitness, 1799 Central Ave, St. Petersburg FL 33712" },
   cls_wed_eve:  { title: "Yin & Meditation",     day: "Wednesday", time: "7:00 PM",  duration: 75, venue: "Journey into Fitness, 1799 Central Ave, St. Petersburg FL 33712" },
   cls_thu:      { title: "Power Pilates",        day: "Thursday",  time: "7:00 AM",  duration: 60, venue: "Journey into Fitness, 1799 Central Ave, St. Petersburg FL 33712" },
   cls_fri: { title: "Iyengar Yoga",          day: "Friday",    time: "10:00 AM", duration: 90, venue: "Journey into Fitness, 1799 Central Ave, St. Petersburg FL 33712", online: false },
