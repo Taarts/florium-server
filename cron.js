@@ -2,6 +2,7 @@ const cron     = require("node-cron");
 const Booking  = require("./models/Booking");
 const Class    = require("./models/Class");
 const Settings = require("./models/Settings");
+const Teacher  = require("./models/Teacher");
 const { sendAdminDigest } = require("./email");
 
 const digestSentLog = new Set();
@@ -25,10 +26,12 @@ cron.schedule("0 20 * * *", async () => {
 
     for (const cls of classes) {
       const bookings = await Booking.find({ classId: cls.id, date: dateStr, status: "confirmed" });
-      if (!bookings.length) continue;
       const students = bookings.map(b => ({ studentName: b.studentName, studentEmail: b.studentEmail, paymentType: b.paymentType }));
+      const teacher = cls.teacher ? await Teacher.findOne({ name: new RegExp(`^${cls.teacher}$`, "i"), active: true }) : null;
+      const ccEmails = teacher?.email ? [{ email: teacher.email }] : [];
+
       for (const email of settings.adminEmails) {
-        await sendAdminDigest({ adminEmail: email, cls: cls.toObject(), date: dateStr, students, type: "evening" });
+        await sendAdminDigest({ adminEmail: email, cls: cls.toObject(), date: dateStr, students, type: "evening", cc: ccEmails });
       }
       console.log(`✓ Evening digest sent for ${cls.id} on ${dateStr} (${students.length} students)`);
     }
@@ -65,9 +68,11 @@ cron.schedule("* * * * *", async () => {
 
       const bookings = await Booking.find({ classId: cls.id, date: today, status: "confirmed" });
       const students = bookings.map(b => ({ studentName: b.studentName, studentEmail: b.studentEmail, paymentType: b.paymentType }));
+      const teacher = cls.teacher ? await Teacher.findOne({ name: new RegExp(`^${cls.teacher}$`, "i"), active: true }) : null;
+      const ccEmails = teacher?.email ? [{ email: teacher.email }] : [];
 
       for (const email of settings.adminEmails) {
-        await sendAdminDigest({ adminEmail: email, cls: cls.toObject(), date: today, students, type: "preclass" });
+        await sendAdminDigest({ adminEmail: email, cls: cls.toObject(), date: today, students, type: "preclass", cc: ccEmails });
       }
 
       digestSentLog.add(key);

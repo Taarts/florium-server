@@ -585,6 +585,67 @@ async function sendMembershipCancelledEmail({ name, email, pass }) {
     console.error("✗ Membership cancellation email failed:", err.message);
   }
 }
+// ── Admin digest ───────────────────────────────────────────
+async function sendAdminDigest({ adminEmail, cls, date, students, type, cc = [] }) {
+  const formattedDate = formatDate(date);
+  const isEvening     = type === "evening";
+  const subject       = isEvening
+    ? `Tomorrow's roster — ${cls.title}, ${formattedDate}`
+    : `30-min reminder — ${cls.title} starting soon`;
+
+  const studentRows = students.length
+    ? students.map((s, i) => `
+        <tr style="background:${i % 2 === 0 ? "#faf7fb" : "white"};">
+          <td style="padding:10px 16px; font-size:14px; color:#2d2d3e;">${s.studentName}</td>
+          <td style="padding:10px 16px; font-size:13px; color:#6b6b8a;">${s.studentEmail}</td>
+          <td style="padding:10px 16px; font-size:13px; color:#6b6b8a;">${formatPaymentType(s.paymentType)}</td>
+        </tr>`).join("")
+    : `<tr>
+        <td colspan="3" style="padding:16px; font-size:14px; color:#9b8fa8; text-align:center;">
+          No students booked
+        </td>
+       </tr>`;
+
+  const bodyHtml = `
+    <p style="margin:0 0 20px; font-size:15px; color:#4a4a6a; line-height:1.6;">
+      ${isEvening
+        ? `Here is tomorrow's roster for <strong>${cls.title}</strong> on <strong>${formattedDate}</strong>.`
+        : `<strong>${cls.title}</strong> starts in 30 minutes (${cls.time}). Here's your roster.`}
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="border:1px solid #e8e0ec; border-radius:8px; overflow:hidden; margin-bottom:24px;">
+      <tr style="background:#842953;">
+        <td style="padding:10px 16px; font-size:11px; font-weight:600; color:rgba(255,255,255,0.85);
+            letter-spacing:0.1em; text-transform:uppercase;">Student</td>
+        <td style="padding:10px 16px; font-size:11px; font-weight:600; color:rgba(255,255,255,0.85);
+            letter-spacing:0.1em; text-transform:uppercase;">Email</td>
+        <td style="padding:10px 16px; font-size:11px; font-weight:600; color:rgba(255,255,255,0.85);
+            letter-spacing:0.1em; text-transform:uppercase;">Payment</td>
+      </tr>
+      ${studentRows}
+    </table>
+    <p style="margin:0; font-size:12px; color:#9b8fa8;">
+      ${students.length} student${students.length !== 1 ? "s" : ""} booked
+      · ${cls.title} · ${formattedDate} · ${cls.time}
+    </p>`;
+
+  const label   = isEvening ? "Evening Digest" : "Pre-Class Reminder";
+  const html    = emailShell(bannerHtml(label, cls.title), bodyHtml);
+
+  try {
+       await brevoClient.transactionalEmails.sendTransacEmail({
+         sender:      { name: FROM_NAME, email: FROM_EMAIL },
+         to:          [{ email: adminEmail }],
+         cc:          cc.length ? cc : undefined,
+         replyTo:     { email: REPLY_TO },
+         subject,
+         htmlContent: html,
+       });
+    console.log(`✓ Admin digest (${type}) sent to ${adminEmail}`);
+  } catch (err) {
+    console.error("✗ Admin digest email failed:", err.message);
+  }
+}
 
 module.exports = {
   sendBookingConfirmation,
@@ -596,4 +657,5 @@ module.exports = {
   sendMembershipPurchaseEmail,
   sendMembershipRenewalEmail,
   sendMembershipCancelledEmail,
+  sendAdminDigest, 
 };
