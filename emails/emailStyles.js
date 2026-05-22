@@ -1,22 +1,21 @@
 module.exports = {
   // Brand colors
-  colorPrimary:      "#1e5c3a",   // deep forest green — banners, buttons, headings
-  colorGold:         "#c9a84c",   // gold — accent borders
-  colorPrimaryLight: "hsl(140, 45%, 32%)",  // medium green
+  colorPrimary:      "#1e3d2f",   // forest green — banners, buttons, headings
+  colorGold:         "#c9963a",   // gold — accent, hover
 
   // Backgrounds
-  colorBgPage:       "hsl(140, 30%, 92%)",  // page/outer background
-  colorBgLight:      "hsl(140, 20%, 96%)",  // table header, alternating rows
+  colorBgPage:       "#f7faf8",   // page/outer background (cream)
+  colorBgLight:      "#eef4f0",   // table header, alternating rows (sage)
   colorBgWhite:      "#ffffff",
 
   // Borders
-  colorBorder:       "hsl(140, 12%, 78%)",  // standard border
-  colorBorderLight:  "hsl(140, 12%, 78%)",  // subtle row border
+  colorBorder:       "#d0e0d6",   // standard border
+  colorBorderLight:  "#e8f0ec",   // subtle row border
 
   // Text
-  colorTextDark:     "#2d2d3e",   // primary text
-  colorTextBody:     "#4a4a6a",   // body copy
-  colorTextMuted:    "#9b8fa8",   // labels, secondary text
+  colorTextDark:     "#0f1f17",   // primary text (ink)
+  colorTextBody:     "#2a3d32",   // body copy (ink-soft)
+  colorTextMuted:    "#5a6b61",   // labels, secondary text (grey)
   colorTextWhite:    "#ffffff",
 
   // Font

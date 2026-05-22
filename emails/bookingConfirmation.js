@@ -28,16 +28,15 @@ function bookingConfirmationHtml({ name, cls, formattedDate, paymentType, classe
         <td style="padding:10px 20px; font-size:14px; color:${s.colorTextDark};">${cls.venue}</td>
       </tr>`;
  
-  const passBlock = classesRemaining !== null && classesRemaining !== undefined
-    ? `<p style="margin:0 0 24px; font-size:13px; color:#6b6b8a;">
+const passBlock = classesRemaining !== null && classesRemaining !== undefined
+    ? `<p style="margin:0 0 24px; font-size:13px; color:${s.colorTextMuted};">
         You have <strong>${classesRemaining}</strong> class${classesRemaining !== 1 ? "es" : ""} remaining on your pass.
        </p>`
     : "";
  
   const bringBlock = cls.venue === "venue_online"
-    ? '<div style="margin:0 0 24px; padding:16px 20px; background:${s.colorBgLight}; border-left:3px solid ${s.colorGold}; border-radius:0 6px 6px 0;"><p style="margin:0 0 6px; font-size:11px; font-weight:600; color:${s.colorPrimary}; letter-spacing:0.1em; text-transform:uppercase;">Getting ready</p><p style="margin:0; font-size:13px; color:${s.colorTextBody}; line-height:1.7;">Mat, belt, and 2 bricks. For shoulder stand, 4\u20136 blankets are recommended. Your Zoom link is above \u2014 join a few minutes early to check your connection.</p></div>'
-    : '<div style="margin:0 0 24px; padding:16px 20px; background:${s.colorBgLight}; border-left:3px solid ${s.colorGold}; border-radius:0 6px 6px 0;"><p style="margin:0 0 6px; font-size:11px; font-weight:600; color:${s.colorPrimary}; letter-spacing:0.1em; text-transform:uppercase;">What to bring</p><p style="margin:0; font-size:13px; color:${s.colorTextBody}; line-height:1.7;">Mat, belt, and 2 bricks. For shoulder stand, 4\u20136 blankets are recommended \u2014 alternatives are offered if needed.</p></div>';
- 
+    ? `<div style="margin:0 0 24px; padding:16px 20px; background:${s.colorBgLight}; border-left:3px solid ${s.colorGold}; border-radius:0 6px 6px 0;"><p style="margin:0 0 6px; font-size:11px; font-weight:600; color:${s.colorPrimary}; letter-spacing:0.1em; text-transform:uppercase;">Getting ready</p><p style="margin:0; font-size:13px; color:${s.colorTextBody}; line-height:1.7;">Mat, belt, and 2 bricks. For shoulder stand, 4–6 blankets are recommended. Your Zoom link is above — join a few minutes early to check your connection.</p></div>`
+    : `<div style="margin:0 0 24px; padding:16px 20px; background:${s.colorBgLight}; border-left:3px solid ${s.colorGold}; border-radius:0 6px 6px 0;"><p style="margin:0 0 6px; font-size:11px; font-weight:600; color:${s.colorPrimary}; letter-spacing:0.1em; text-transform:uppercase;">What to bring</p><p style="margin:0; font-size:13px; color:${s.colorTextBody}; line-height:1.7;">Mat, belt, and 2 bricks. For shoulder stand, 4–6 blankets are recommended — alternatives are offered if needed.</p></div>`;
   // Cancel / reschedule links — only shown when bookingId is available
   const manageBlock = bookingId
     ? `<p style="margin:16px 0 0; font-size:13px; color:${s.colorTextMuted}; line-height:1.7;">
