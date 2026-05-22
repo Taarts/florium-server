@@ -1,21 +1,26 @@
 require("dotenv").config();
-const express       = require("express");
-const mongoose      = require("mongoose");
-const cors          = require("cors");
-const studentRoutes = require("./routes/students");
-const passRoutes    = require("./routes/passes");
-const bookingRoutes = require("./routes/bookings");
-const acuityRoutes  = require("./routes/acuity");
+const express        = require("express");
+const mongoose       = require("mongoose");
+const cors           = require("cors");
+const studentRoutes  = require("./routes/students");
+const passRoutes     = require("./routes/passes");
+const bookingRoutes  = require("./routes/bookings");
+const acuityRoutes   = require("./routes/acuity");
 const paymentsRouter = require("./routes/payments");
-const reportsRouter = require("./routes/reports");
+const reportsRouter  = require("./routes/reports");
 const scheduleRouter = require("./routes/schedule");
-const waiverRouter = require("./routes/waiver");
+const waiverRouter   = require("./routes/waiver");
+const stripeWebhook  = require("./routes/stripeWebhook");
 
 const app = express();
 
 app.use(cors({
   origin: [process.env.CLIENT_ORIGIN, "http://localhost:3000"],
 }));
+
+// !! Must be before express.json() — Stripe needs the raw body for signature verification
+app.use("/api/stripe", stripeWebhook);
+
 app.use(express.json());
 
 app.use("/api/students",  studentRoutes);

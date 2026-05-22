@@ -1,15 +1,15 @@
 const mongoose = require("mongoose");
 
 const PASS_TYPES = [
-                    "dropin",
-                    "pass4", 
-                    "pass8", 
-                    "member2x", 
-                    "memberUnl", 
-                    "private1", 
-                    "private3", 
-                    "private10"
-                   ];
+  "dropin",
+  "pass4",
+  "pass8",
+  "member2x",
+  "memberUnl",
+  "private1",
+  "private3",
+  "private10",
+];
 
 const passSchema = new mongoose.Schema(
   {
@@ -55,6 +55,19 @@ const passSchema = new mongoose.Schema(
     stripePaymentId: {
       type: String,
     },
+    // Stripe subscription fields (memberships only)
+    stripeSubscriptionId: {
+      type: String,
+      default: null,
+    },
+    stripeCustomerId: {
+      type: String,
+      default: null,
+    },
+    currentPeriodEnd: {
+      type: Date,
+      default: null,
+    },
     // Admin notes
     notes: {
       type: String,
@@ -85,7 +98,6 @@ passSchema.statics.findByCodeOrEmail = async function (input) {
   const isEmail    = normalised.includes("@");
 
   if (isEmail) {
-    // Return the most recently created active pass for this email
     return this.findOne({ studentEmail: normalised, active: true })
       .sort({ createdAt: -1 });
   } else {

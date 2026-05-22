@@ -1,7 +1,6 @@
 const express = require("express");
 const router  = express.Router();
 const Pass    = require("../models/Pass");
-const stripe  = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const MEMBERSHIP_CONFIG = require("../config/memberships");
 const {
@@ -10,13 +9,19 @@ const {
   sendMembershipCancelledEmail,
 } = require("../email");
 
+// Lazy Stripe factory — avoids module-level init before dotenv loads
+function getStripe() {
+  return require("stripe")(process.env.STRIPE_SECRET_KEY);
+}
+
 // IMPORTANT: this router must be mounted BEFORE express.json() in index.js,
 // because Stripe signature verification needs the raw request body.
 router.post(
   "/webhook",
   express.raw({ type: "application/json" }),
   async (req, res) => {
-    console.log("WEBHOOK HIT", req.method, req.path); const sig = req.headers["stripe-signature"];
+    const stripe = getStripe();
+    const sig    = req.headers["stripe-signature"];
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
 
     let event;
@@ -47,19 +52,26 @@ router.post(
 );
 
 async function handleInvoicePaymentSucceeded(invoice) {
-  const subscriptionId = invoice.subscription ?? invoice.subscription_id ?? invoice.parent?.subscription_details?.subscription; console.log("WEBHOOK invoice.subscription:", invoice.subscription, "keys:", Object.keys(invoice).join(","));
+  const stripe = getStripe();
+
+  const subscriptionId =
+    invoice.subscription ??
+    invoice.subscription_id ??
+    invoice.parent?.subscription_details?.subscription;
+
   if (!subscriptionId) return;
 
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
   const meta     = subscription.metadata || {};
   const passType = meta.passType;
   const config   = MEMBERSHIP_CONFIG[passType];
+
   if (!config) {
     console.warn(`✗ webhook: unknown passType in subscription ${subscriptionId}`);
     return;
   }
 
-  const studentName  = meta.studentName  || "";
+  const studentName  = meta.studentName || "";
   const studentEmail = (meta.studentEmail || invoice.customer_email || "").toLowerCase().trim();
 
   const rawPeriodEnd =
@@ -70,6 +82,7 @@ async function handleInvoicePaymentSucceeded(invoice) {
     console.error(`✗ webhook: no current_period_end on subscription ${subscriptionId}`);
     throw new Error("subscription is missing current_period_end");
   }
+
   const periodEnd = new Date(rawPeriodEnd * 1000);
 
   let pass = await Pass.findOne({ stripeSubscriptionId: subscriptionId });
@@ -118,8 +131,8 @@ async function handleSubscriptionDeleted(subscription) {
   pass.active = false;
   await pass.save();
 
-  const meta = subscription.metadata || {};
-  const studentName  = meta.studentName  || "";
+  const meta         = subscription.metadata || {};
+  const studentName  = meta.studentName || "";
   const studentEmail = (meta.studentEmail || pass.studentEmail || "").toLowerCase().trim();
 
   await sendMembershipCancelledEmail({ name: studentName, email: studentEmail, pass });
