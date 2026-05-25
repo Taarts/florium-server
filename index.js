@@ -10,6 +10,7 @@ const paymentsRouter = require("./routes/payments");
 const reportsRouter  = require("./routes/reports");
 const scheduleRouter = require("./routes/schedule");
 const waiverRouter   = require("./routes/waiver");
+const merchRouter = require("./routes/merch");
 const stripeWebhook  = require("./routes/stripeWebhook");
 
 const app = express();
@@ -34,6 +35,7 @@ app.use("/api/stripe", stripeWebhook);
 
 app.use(express.json());
 
+app.use("/api/merch", merchRouter);
 app.use("/api/students",  studentRoutes);
 app.use("/api/passes",    passRoutes);
 app.use("/api/bookings",  bookingRoutes);
