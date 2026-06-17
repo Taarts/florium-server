@@ -14,6 +14,17 @@ const stripeWebhook  = require("./routes/stripeWebhook");
 
 const app = express();
 
+// ── Rate limiting ──────────────────────────────────────────
+const rateLimit = require("express-rate-limit");
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+app.use("/api", limiter);
+
 app.use(cors({
   origin: [process.env.CLIENT_ORIGIN, "http://localhost:3000"],
 }));
