@@ -573,3 +573,18 @@ router.post("/pass-alerts/remind-all", adminAuth, async (req, res) => {
 });
 
 module.exports = router;
+
+// R8 — Waiver report
+router.get('/waivers', adminAuth, async (req, res) => {
+  try {
+    const students = await Student.find(
+      { waiverSigned: true },
+      { name: 1, email: 1, waiverSignedAt: 1, waiverPdfPath: 1, _id: 0 }
+    ).sort({ waiverSignedAt: -1 });
+
+    res.json(students);
+  } catch (err) {
+    console.error('Waiver report error:', err);
+    res.status(500).json({ error: 'Failed to fetch waiver report' });
+  }
+});
