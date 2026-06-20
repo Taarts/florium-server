@@ -94,11 +94,20 @@ router.post("/subscribe", async (req, res, next) => {
     if (!name || !email || !passType)
       return res.status(400).json({ error: "Missing required fields." });
 
-    const config = MEMBERSHIP_CONFIG[passType];
-    if (!config)
-      return res.status(400).json({ error: "Invalid membership type." });
+      const config = MEMBERSHIP_CONFIG[passType];
+          if (!config)
+            return res.status(400).json({ error: "Invalid membership type." });
 
-    const priceId = process.env[config.priceEnvVar];
+          // Idempotency: block if active membership already exists
+          const existing = await Pass.findOne({
+            studentEmail: email.toLowerCase().trim(),
+            type:         passType,
+            active:       true,
+          });
+          if (existing) return res.status(409).json({ error: "Active membership already exists." });
+
+          const priceId = process.env[config.priceEnvVar];
+      
     if (!priceId)
       return res.status(500).json({ error: `Stripe price not configured for ${passType}.` });
 
