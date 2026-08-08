@@ -1,5 +1,7 @@
-const PRICING_URL = 'https://iy-sp.com/pricing';
-const CONTACT_EMAIL = 'info@iy-sp.com';
+const STUDIO_NAME  = process.env.STUDIO_NAME  || "Florium Studio";
+const STUDIO_EMAIL = process.env.STUDIO_EMAIL || "info@florium.live";
+const PRICING_URL  = process.env.PRICING_URL  || "https://florium.live/pricing";
+const s            = require("./emailStyles");
 
 /**
  * privatePassPromptHtml({ studentName, className, date, time, duration })
@@ -33,9 +35,9 @@ function privatePassPromptHtml({ studentName, className, date, time, duration })
 
   const passTableRows = passRows.map((row, i) => `
     <tr style="background:${i % 2 === 0 ? '#fdf8fc' : '#ffffff'};">
-      <td style="padding:10px 20px; font-size:14px; color:#3d2244; border-top:1px solid #f0eaf4;">${row.label}</td>
-      <td style="padding:10px 20px; font-size:14px; color:#3d2244; border-top:1px solid #f0eaf4; text-align:right; font-weight:600;">${row.direct}</td>
-      <td style="padding:10px 20px; font-size:14px; color:#7a6882; border-top:1px solid #f0eaf4; text-align:right;">${row.stripe} <span style="font-size:12px;">(via Stripe)</span></td>
+      <td style="padding:10px 20px; font-size:14px; color:#3d2244; border-top:1px solid ${s.colorBorder};">${row.label}</td>
+      <td style="padding:10px 20px; font-size:14px; color:#3d2244; border-top:1px solid ${s.colorBorder}; text-align:right; font-weight:600;">${row.direct}</td>
+      <td style="padding:10px 20px; font-size:14px; color:#7a6882; border-top:1px solid ${s.colorBorder}; text-align:right;">${row.stripe} <span style="font-size:12px;">(via Stripe)</span></td>
     </tr>`).join('');
 
   return `<!DOCTYPE html>
@@ -54,8 +56,8 @@ function privatePassPromptHtml({ studentName, className, date, time, duration })
           <!-- Logo pill -->
           <tr>
             <td align="center" style="padding:32px 40px 0;">
-              <div style="display:inline-block; border:1.5px solid #842953; border-radius:20px; padding:8px 24px;">
-                <span style="font-family:Georgia, serif; font-size:13px; letter-spacing:0.12em; text-transform:uppercase; color:#842953;">Iyengar Yoga St. Petersburg</span>
+              <div style="display:inline-block; border:1.5px solid ${s.colorPrimary}; border-radius:20px; padding:8px 24px;">
+                <span style="font-family:Georgia, serif; font-size:13px; letter-spacing:0.12em; text-transform:uppercase; color:${s.colorPrimary};">${STUDIO_NAME}</span>
               </div>
             </td>
           </tr>
@@ -63,7 +65,7 @@ function privatePassPromptHtml({ studentName, className, date, time, duration })
           <!-- Banner -->
           <tr>
             <td style="padding:28px 40px 0;">
-              <div style="background:#842953; border-radius:6px; padding:18px 28px;">
+              <div style="background:${s.colorPrimary}; border-radius:6px; padding:18px 28px;">
                 <p style="margin:0; font-size:18px; color:#ffffff; font-family:Georgia, serif; letter-spacing:0.04em;">Private Class — Pass Required</p>
               </div>
             </td>
@@ -84,22 +86,22 @@ function privatePassPromptHtml({ studentName, className, date, time, duration })
           <!-- Requested class details -->
           <tr>
             <td style="padding:0 40px 24px;">
-              <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px; overflow:hidden; border:1px solid #f0eaf4;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px; overflow:hidden; border:1px solid ${s.colorBorder};">
                 <tr style="background:#fdf8fc;">
                   <td style="padding:10px 20px; font-size:13px; text-transform:uppercase; letter-spacing:0.08em; color:#7a6882;">Class</td>
                   <td style="padding:10px 20px; font-size:14px; color:#3d2244; text-align:right; font-weight:600;">${className}</td>
                 </tr>
                 <tr style="background:#ffffff;">
-                  <td style="padding:10px 20px; font-size:13px; text-transform:uppercase; letter-spacing:0.08em; color:#7a6882; border-top:1px solid #f0eaf4;">Date</td>
-                  <td style="padding:10px 20px; font-size:14px; color:#3d2244; text-align:right; border-top:1px solid #f0eaf4;">${formattedDate}</td>
+                  <td style="padding:10px 20px; font-size:13px; text-transform:uppercase; letter-spacing:0.08em; color:#7a6882; border-top:1px solid ${s.colorBorder};">Date</td>
+                  <td style="padding:10px 20px; font-size:14px; color:#3d2244; text-align:right; border-top:1px solid ${s.colorBorder};">${formattedDate}</td>
                 </tr>
                 <tr style="background:#fdf8fc;">
-                  <td style="padding:10px 20px; font-size:13px; text-transform:uppercase; letter-spacing:0.08em; color:#7a6882; border-top:1px solid #f0eaf4;">Time</td>
-                  <td style="padding:10px 20px; font-size:14px; color:#3d2244; text-align:right; border-top:1px solid #f0eaf4;">${formatTime(time)}</td>
+                  <td style="padding:10px 20px; font-size:13px; text-transform:uppercase; letter-spacing:0.08em; color:#7a6882; border-top:1px solid ${s.colorBorder};">Time</td>
+                  <td style="padding:10px 20px; font-size:14px; color:#3d2244; text-align:right; border-top:1px solid ${s.colorBorder};">${formatTime(time)}</td>
                 </tr>
                 <tr style="background:#ffffff;">
-                  <td style="padding:10px 20px; font-size:13px; text-transform:uppercase; letter-spacing:0.08em; color:#7a6882; border-top:1px solid #f0eaf4;">Duration</td>
-                  <td style="padding:10px 20px; font-size:14px; color:#3d2244; text-align:right; border-top:1px solid #f0eaf4;">${durationLabel}</td>
+                  <td style="padding:10px 20px; font-size:13px; text-transform:uppercase; letter-spacing:0.08em; color:#7a6882; border-top:1px solid ${s.colorBorder};">Duration</td>
+                  <td style="padding:10px 20px; font-size:14px; color:#3d2244; text-align:right; border-top:1px solid ${s.colorBorder};">${durationLabel}</td>
                 </tr>
               </table>
             </td>
@@ -115,8 +117,8 @@ function privatePassPromptHtml({ studentName, className, date, time, duration })
           <!-- Pass pricing table -->
           <tr>
             <td style="padding:0 40px 8px;">
-              <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px; overflow:hidden; border:1px solid #f0eaf4;">
-                <tr style="background:#842953;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px; overflow:hidden; border:1px solid ${s.colorBorder};">
+                <tr style="background:${s.colorPrimary};">
                   <th style="padding:10px 20px; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#ffffff; text-align:left; font-weight:600;">Pass</th>
                   <th style="padding:10px 20px; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#ffffff; text-align:right; font-weight:600;">Direct</th>
                   <th style="padding:10px 20px; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#ffffff; text-align:right; font-weight:600;">Online</th>
@@ -132,16 +134,16 @@ function privatePassPromptHtml({ studentName, className, date, time, duration })
           <!-- How to pay block -->
           <tr>
             <td style="padding:20px 40px 24px;">
-              <div style="border-left:3px solid #e58684; padding:14px 18px; background:#fdf8fc; border-radius:0 6px 6px 0;">
+              <div style="border-left:3px solid ${s.colorGold}; padding:14px 18px; background:#fdf8fc; border-radius:0 6px 6px 0;">
                 <p style="margin:0 0 10px; font-size:14px; color:#3d2244; font-weight:600;">How to pay</p>
                 <p style="margin:0 0 8px; font-size:14px; color:#3d2244; line-height:1.7;">
-                  <strong>Online (Stripe):</strong> Visit <a href="${PRICING_URL}" style="color:#842953;">${PRICING_URL}</a> to purchase a pass by card.
+                  <strong>Online (Stripe):</strong> Visit <a href="${PRICING_URL}" style="color:${s.colorPrimary};">${PRICING_URL}</a> to purchase a pass by card.
                 </p>
                 <p style="margin:0 0 8px; font-size:14px; color:#3d2244; line-height:1.7;">
                   <strong>Zelle / Venmo / cash:</strong> Reply to this email and we'll arrange it — no processing fee.
                 </p>
                 <p style="margin:0; font-size:14px; color:#3d2244; line-height:1.7;">
-                  Questions? Just reply to <a href="mailto:${CONTACT_EMAIL}" style="color:#842953;">${CONTACT_EMAIL}</a>.
+                  Questions? Just reply to <a href="mailto:${CONTACT_EMAIL}" style="color:${s.colorPrimary};">${CONTACT_EMAIL}</a>.
                 </p>
               </div>
             </td>
@@ -149,10 +151,10 @@ function privatePassPromptHtml({ studentName, className, date, time, duration })
 
           <!-- Footer -->
           <tr>
-            <td style="padding:20px 40px 32px; border-top:1px solid #f0eaf4;">
+            <td style="padding:20px 40px 32px; border-top:1px solid ${s.colorBorder};">
               <p style="margin:0; font-size:13px; color:#9a8aa4; text-align:center; line-height:1.8;">
-                Iyengar Yoga St. Petersburg &nbsp;·&nbsp;
-                <a href="mailto:${CONTACT_EMAIL}" style="color:#842953; text-decoration:none;">${CONTACT_EMAIL}</a>
+                ${STUDIO_NAME} &nbsp;·&nbsp;
+                <a href="mailto:${CONTACT_EMAIL}" style="color:${s.colorPrimary}; text-decoration:none;">${CONTACT_EMAIL}</a>
               </p>
             </td>
           </tr>

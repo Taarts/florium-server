@@ -1,10 +1,11 @@
-
 const express   = require("express");
 const router    = express.Router();
 const Booking   = require("../models/Booking");
 const Pass      = require("../models/Pass");
 const Student   = require("../models/Student");
+const Class     = require("../models/Class");
 const adminAuth = require("../middleware/auth");
+const { validateEmail } = require("../utils/validateEmail");
 
 const {
   sendBookingConfirmation,
@@ -189,6 +190,10 @@ router.post("/", async (req, res, next) => {
  
     if (!name || !email || !classId || !date || !paymentType)
       return res.status(400).json({ error: "Missing required booking fields." });
+
+    const emailCheck = await validateEmail(email);
+    if (!emailCheck.valid)
+      return res.status(400).json({ error: emailCheck.reason });
  
     await Student.findOneAndUpdate(
       { email: email.toLowerCase().trim() },
@@ -539,4 +544,92 @@ router.patch("/:id/cancel-student", async (req, res, next) => {
   }
 });
  
+
+// ── POST /api/bookings/admin-add ──────────────────────────
+router.post("/admin-add", adminAuth, async (req, res) => {
+  try {
+    const { studentName, studentEmail, classId, date, paymentType, passCode } = req.body;
+    if (!studentName || !studentEmail || !classId || !date || !paymentType) {
+      return res.status(400).json({ error: "Missing required fields." });
+    }
+
+    const emailCheck = await validateEmail(studentEmail);
+    if (!emailCheck.valid)
+      return res.status(400).json({ error: emailCheck.reason });
+
+    await Student.findOneAndUpdate(
+      { email: studentEmail.toLowerCase() },
+      { $setOnInsert: { name: studentName, email: studentEmail.toLowerCase(), createdAt: new Date() } },
+      { upsert: true, new: true }
+    );
+
+    let passId = null;
+    if (passCode) {
+      const pass = await Pass.findOne({ code: passCode.toUpperCase(), active: true });
+      if (!pass) return res.status(404).json({ error: `Pass code ${passCode} not found or inactive.` });
+      passId = pass._id;
+    }
+
+    const booking = new Booking({
+      studentName,
+      studentEmail: studentEmail.toLowerCase(),
+      classId,
+      date,
+      paymentType,
+      passId: passId || null,
+      status: "confirmed",
+      checkedIn: false,
+    });
+    await booking.save();
+
+    let classesRemaining;
+    if (passId) {
+      const updatedPass = await Pass.findByIdAndUpdate(
+        passId,
+        { $inc: { classesUsed: 1 } },
+        { new: true }
+      );
+      classesRemaining = updatedPass?.classesTotal != null
+        ? updatedPass.classesTotal - updatedPass.classesUsed
+        : undefined;
+    }
+
+    const classDoc = await Class.findOne({ id: classId });
+    sendBookingConfirmation({
+      name: studentName,
+      email: studentEmail,
+      classId,
+      date,
+      paymentType,
+      classesRemaining,
+      bookingId: booking._id,
+      cls: classDoc?.toObject() || null,
+    }).catch(err => console.error("admin-add confirmation email failed:", err));
+
+    res.json({ success: true, booking });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({ error: "This student already has a confirmed booking for this class on this date." });
+    }
+    console.error("admin-add booking error:", err);
+    res.status(500).json({ error: "Failed to add booking." });
+  }
+});
+
+
+// ── GET /api/bookings/private ──────────────────────────────
+router.get("/private", async (req, res) => {
+  try {
+    const filter = { classId: /^private__/, status: "confirmed" };
+    if (req.query.date) filter.date = req.query.date;
+
+    const bookings = await Booking.find(filter)
+      .sort({ date: 1 })
+      .select("date classId _id studentName studentEmail time duration location status checkedIn");
+    res.json({ bookings });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

@@ -55,6 +55,10 @@ const passSchema = new mongoose.Schema(
     stripePaymentId: {
       type: String,
     },
+    stripeSubscriptionId: { type: String, default: null },
+    stripeCustomerId:     { type: String, default: null },
+    currentPeriodEnd:     { type: Date,   default: null },
+
     // Admin notes
     notes: {
       type: String,

@@ -10,7 +10,9 @@ const adminAuth  = require("../middleware/auth");
 router.get("/classes", async (req, res) => {
   try {
     const classes = await Class.find().sort({ dayOfWeek: 1, time: 1 });
-    res.json({ classes });
+    const today = new Date().toISOString().slice(0, 10);
+    const active = classes.filter(c => !c.endDate || c.endDate >= today);
+    res.json({ classes: active });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -28,7 +30,7 @@ router.post("/classes", adminAuth, async (req, res) => {
 router.patch("/classes/:id", adminAuth, async (req, res) => {
   try {
     const cls = await Class.findOneAndUpdate(
-      { id: req.params.id }, req.body, { new: true }
+      { id: req.params.id }, { $set: req.body }, { new: true }
     );
     res.json({ class: cls });
   } catch (e) {
@@ -38,8 +40,14 @@ router.patch("/classes/:id", adminAuth, async (req, res) => {
 
 router.delete("/classes/:id", adminAuth, async (req, res) => {
   try {
-    await Class.findOneAndDelete({ id: req.params.id });
-    res.json({ ok: true });
+    const endDate = new Date().toISOString().slice(0, 10);
+    const cls = await Class.findOneAndUpdate(
+      { id: req.params.id },
+      { endDate },
+      { new: true }
+    );
+    if (!cls) return res.status(404).json({ error: "Class not found" });
+    res.json({ ok: true, endDate });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -67,7 +75,7 @@ router.post("/workshops", adminAuth, async (req, res) => {
 router.patch("/workshops/:id", adminAuth, async (req, res) => {
   try {
     const ws = await Workshop.findOneAndUpdate(
-      { id: req.params.id }, req.body, { new: true }
+      { id: req.params.id }, { $set: req.body }, { new: true }
     );
     res.json({ workshop: ws });
   } catch (e) {

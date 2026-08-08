@@ -260,4 +260,30 @@ router.get("/unsigned", adminAuth, async (req, res) => {
   }
 });
 
+
+// POST /api/waiver/send-pdf — admin: email waiver PDF to a recipient
+router.post("/send-pdf", adminAuth, async (req, res) => {
+  const { email, recipientEmail } = req.body;
+  if (!email || !recipientEmail) return res.status(400).json({ error: "email and recipientEmail required" });
+
+  try {
+    const student = await Student.findOne({ email: email.toLowerCase().trim() });
+    if (!student?.waiverPdfPath) return res.status(404).json({ error: "No waiver found" });
+    if (!fs.existsSync(student.waiverPdfPath)) return res.status(404).json({ error: "PDF file not found on server." });
+
+    const pdfBuffer = fs.readFileSync(student.waiverPdfPath);
+
+    await sendWaiverEmail({
+      name: student.name,
+      email: recipientEmail,
+      pdfBuffer,
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("send-pdf error:", err);
+    res.status(500).json({ error: "Failed to send waiver email" });
+  }
+});
+
 module.exports = router;

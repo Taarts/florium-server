@@ -57,7 +57,7 @@ router.get("/checkin", adminAuth, async (req, res) => {
     if (req.query.classId) query.classId = req.query.classId;
 
     const classes  = await Class.find({});
-    const classMap = Object.fromEntries(classes.map(c => [c.id, c]));
+    const classMap = Object.fromEntries(classes.map(c => [c.id ?? c._id.toString(), c]));
 
     const bookings = await Booking.find(query);
 
@@ -206,7 +206,7 @@ router.get("/payroll", adminAuth, async (req, res) => {
     const { from, to } = defaultRange(req);
 
     const classes  = await Class.find({});
-    const classMap = Object.fromEntries(classes.map(c => [c.id, c]));
+    const classMap = Object.fromEntries(classes.map(c => [c.id ?? c._id.toString(), c]));
 
     // Get all confirmed bookings with check-in data
     const bookings = await Booking.find({
@@ -241,14 +241,23 @@ router.get("/payroll", adminAuth, async (req, res) => {
       if (b.checkedIn) groups[key].attended++;
     }
 
-    // Group by teacher and apply pay rates
-    // Pay structure from data.js staff array — flat per-student for now
-    // Future: tiered own-class rates + sub rate + workshop %
+    // Group by teacher and apply pay rates from Class model
     const byTeacher = {};
 
     for (const g of Object.values(groups)) {
       const t = g.teacher;
-      if (!byTeacher[t]) byTeacher[t] = { teacher: t, classes: [], workshopPay: 0, totalPay: 0 };
+      if (!byTeacher[t]) byTeacher[t] = { teacher: t, rate: 0, ceiling: 0, classes: [], totalPay: 0 };
+      const cls = classMap[g.classId];
+      const rate    = cls?.ratePerStudent ?? 0;
+      const ceiling = cls?.ceiling        ?? null;
+      const rawPay  = g.attended * rate;
+      const pay     = ceiling ? Math.min(rawPay, ceiling) : rawPay;
+      g.rate    = rate;
+      g.ceiling = ceiling;
+      g.pay     = pay;
+      byTeacher[t].rate    = rate;
+      byTeacher[t].ceiling = ceiling;
+      byTeacher[t].totalPay += pay;
       byTeacher[t].classes.push(g);
     }
 
@@ -443,22 +452,22 @@ router.get("/attendance", adminAuth, async (req, res) => {
     const to   = req.query.to   ?? toLocalDateStr(today);
 
     const classes  = await Class.find({});
-    const classMap = Object.fromEntries(classes.map(c => [c.id, c]));
+    const classMap = Object.fromEntries(classes.map(c => [c.id ?? c._id.toString(), c]));
     const bookings = await Booking.find({ date: { $gte: from, $lte: to } });
+
+    const PASS_REVENUE = { dropin:25, pass4:21, pass8:19, member2x:16, memberUnl:14, private1:0, private3:0, private10:0 };
 
     const groups = {};
     bookings.forEach(b => {
       const key = `${b.classId}__${b.date}`;
       if (!groups[key]) {
         const cls = classMap[b.classId];
-        groups[key] = {
-          classId: b.classId, date: b.date,
-          teacher: cls?.teacher ?? "Unknown",
-          title:   cls?.title   ?? b.classId,
-          confirmed: 0, cancelled: 0,
-        };
+        groups[key] = { classId: b.classId, date: b.date, teacher: cls?.teacher ?? "Unknown", title: cls?.title ?? b.classId, confirmed: 0, cancelled: 0, attended: 0, revenue: 0 };
       }
-      if (b.status === "confirmed") groups[key].confirmed++;
+      if (b.status === "confirmed") {
+        groups[key].confirmed++;
+        if (b.checkedIn) { groups[key].attended++; groups[key].revenue += PASS_REVENUE[b.paymentType] ?? 0; }
+      }
       if (b.status === "cancelled") groups[key].cancelled++;
     });
 
@@ -573,3 +582,18 @@ router.post("/pass-alerts/remind-all", adminAuth, async (req, res) => {
 });
 
 module.exports = router;
+
+// R8 — Waiver report
+router.get('/waivers', adminAuth, async (req, res) => {
+  try {
+    const students = await Student.find(
+      { waiverSigned: true },
+      { name: 1, email: 1, waiverSignedAt: 1, waiverPdfPath: 1, _id: 0 }
+    ).sort({ waiverSignedAt: -1 });
+
+    res.json(students);
+  } catch (err) {
+    console.error('Waiver report error:', err);
+    res.status(500).json({ error: 'Failed to fetch waiver report' });
+  }
+});
