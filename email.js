@@ -663,6 +663,34 @@ async function sendPrivatePassPromptEmail({ studentName, studentEmail, className
   await brevoClient.transactionalEmails.sendTransacEmail({ sender: { name: FROM_NAME, email: FROM_EMAIL }, to: [{ email: studentEmail }], subject: 'Private class on ' + shortDate + ' — pass required to confirm', htmlContent: html });
 }
 
+// ── Bulk / admin-composed email ─────────────────────────────
+async function sendBulkEmail({ email, name, subject, bodyText }) {
+  const firstName = (name || "").split(" ")[0] || "there";
+  const paragraphs = bodyText
+    .split(/\n{2,}/)
+    .map(p => `<p style="margin:0 0 16px; font-size:15px; color:${s.colorTextBody}; line-height:1.6;">${p.replace(/\n/g, "<br>")}</p>`)
+    .join("");
+
+  const bodyHtml = `
+    <p style="margin:0 0 16px; font-size:15px; color:${s.colorTextBody}; line-height:1.6;">Hi ${firstName},</p>
+    ${paragraphs}`;
+
+  const html = emailShell(bannerHtml("Florium", subject), bodyHtml);
+  try {
+    await brevoClient.transactionalEmails.sendTransacEmail({
+      sender: { name: FROM_NAME, email: FROM_EMAIL },
+      to: [{ email }],
+      replyTo: { email: REPLY_TO },
+      subject,
+      htmlContent: html,
+    });
+    return { email, sent: true };
+  } catch (err) {
+    console.error(`✗ Bulk email failed for ${email}:`, err.message);
+    return { email, sent: false, error: err.message };
+  }
+}
+
 module.exports = {
   sendBookingConfirmation,
   sendWorkshopConfirmationEmail,
@@ -677,4 +705,5 @@ module.exports = {
   sendPassReminderEmail,
   sendWaiverEmail,
   sendPrivatePassPromptEmail,
+  sendBulkEmail,
 };

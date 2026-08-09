@@ -16,6 +16,8 @@ const teachersRouter = require("./routes/teachers");
 const venuesRouter   = require("./routes/venues");
 const merchRouter    = require("./routes/merch");
 const couponsRouter  = require("./routes/coupons");
+const messagesRouter = require("./routes/messages");
+const smsRouter      = require("./routes/sms");
 
 const app = express();
 
@@ -53,6 +55,8 @@ app.use("/api/teachers",  teachersRouter);
 app.use("/api/venues",    venuesRouter);
 app.use("/api/merch",     merchRouter);
 app.use("/api/coupons",   couponsRouter);
+app.use("/api/messages",  messagesRouter);
+app.use("/api/sms",       smsRouter);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 

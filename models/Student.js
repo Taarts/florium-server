@@ -23,6 +23,8 @@ const studentSchema = new mongoose.Schema(
     waiverPdfPath:   { type: String,  default: null }, // server file path
 
     notes:          { type: String },
+    smsOptIn:       { type: Boolean, default: false },
+    smsOptInAt:     { type: Date, default: null },
     acuityClientId: { type: Number },
   },
   { timestamps: true }
