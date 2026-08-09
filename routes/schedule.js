@@ -11,7 +11,8 @@ router.get("/classes", async (req, res) => {
   try {
     const classes = await Class.find().sort({ dayOfWeek: 1, time: 1 });
     const today = new Date().toISOString().slice(0, 10);
-    const active = classes.filter(c => !c.endDate || c.endDate >= today);
+    const includeEnded = req.query.includeEnded === 'true';
+    const active = includeEnded ? classes : classes.filter(c => !c.endDate || c.endDate >= today);
     res.json({ classes: active });
   } catch (e) {
     res.status(500).json({ error: e.message });

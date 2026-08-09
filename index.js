@@ -39,6 +39,7 @@ app.use("/api/stripe", stripeWebhook);
 
 app.use(express.json());
 
+app.use("/api/merch", merchRouter);
 app.use("/api/students",  studentRoutes);
 app.use("/api/passes",    passRoutes);
 app.use("/api/bookings",  bookingRoutes);

@@ -7,8 +7,19 @@ const { sendAdminDigest } = require("./email");
 
 const digestSentLog = new Set();
 
+function nowInET() {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  });
+  const parts = Object.fromEntries(formatter.formatToParts(new Date()).map(p => [p.type, p.value]));
+  return new Date(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`);
+}
+
 // ── 8pm evening digest ────────────────────────────────────
-cron.schedule("0 0 * * *", async () => {
+cron.schedule("0 20 * * *", async () => {
   try {
     const settings = await Settings.getSingleton();
     if (!settings.notificationsEnabled || !settings.adminEmails?.length || settings.notificationMode === "off") return;
@@ -38,7 +49,7 @@ cron.schedule("0 0 * * *", async () => {
   } catch (err) {
     console.error("✗ Evening digest error:", err.message);
   }
-});
+}, { scheduled: true, timezone: "America/New_York" });
 
 // ── 30-min pre-class reminder ─────────────────────────────
 cron.schedule("* * * * *", async () => {
@@ -46,7 +57,7 @@ cron.schedule("* * * * *", async () => {
     const settings = await Settings.getSingleton();
     if (!settings.notificationsEnabled || !settings.adminEmails?.length || settings.notificationMode === "off") return;
 
-    const now     = new Date(new Date().getTime() - 4 * 60 * 60 * 1000); // offset UTC → EDT
+    const now     = nowInET();
     const soon    = new Date(now.getTime() + 30 * 60 * 1000);
     const soonEnd = new Date(now.getTime() + 31 * 60 * 1000);
 
