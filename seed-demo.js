@@ -1,6 +1,6 @@
 const mongoose = require('/var/www/florium-server/node_modules/mongoose');
 
-const MONGO_URI = 'mongodb+srv://REDACTED@florium-demo.nasiimz.mongodb.net/?appName=florium-demo';
+const MONGO_URI = process.env.MONGODB_URI;
 
 const CLASS_IDS = {
   hatha:     '69fa8e6fc7af4ba169d04f8e',
