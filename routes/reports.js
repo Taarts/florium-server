@@ -3,8 +3,17 @@ const router    = express.Router();
 const Booking   = require("../models/Booking");
 const Class     = require("../models/Class");
 const Pass      = require("../models/Pass");
+const Rental    = require("../models/Rental");
+require("../models/Video"); // for populate("video")
+const MembershipRenewal = require("../models/MembershipRenewal");
 const Student   = require("../models/Student");
+const Workshop  = require("../models/Workshop");
+const Teacher   = require("../models/Teacher");
 const adminAuth = require("../middleware/auth");
+const { requireAuth } = require("../middleware/auth");
+const { canAccessClass } = require("../middleware/scope");
+const staffAuth = requireAuth("owner", "teacher");
+const { sendWelcomeEmail } = require("../email");
 
 // ── Helpers ───────────────────────────────────────────────
 function toLocalDateStr(date) {
@@ -38,13 +47,34 @@ const PASS_PRICES = {
   dropin: 25, pass4: 84, pass8: 152,
   member2x: 129, memberUnl: 169,
   private1: 129, private3: 387, private10: 880,
+  teacher: 0,
+};
+
+// Stripe's 2.9% + $0.30 fee is baked into one-time pass prices already (the
+// customer's charge is grossed up to cover it), but membership subscriptions
+// charge the student the raw list price — so PASS_PRICES for memberships is
+// gross, not what actually lands in the bank. Net it out for reporting.
+const STRIPE_PCT = 0.029;
+const STRIPE_FIXED = 0.30;
+const netStripeAmount = (gross) => +(gross - (gross * STRIPE_PCT + STRIPE_FIXED)).toFixed(2);
+
+const NET_PASS_PRICES = {
+  member2x: netStripeAmount(PASS_PRICES.member2x),
+  memberUnl: netStripeAmount(PASS_PRICES.memberUnl),
 };
 
 const PASS_LABELS = {
   dropin: "Drop-in", pass4: "4-Class Pass", pass8: "8-Class Pass",
-  member2x: "2x/week Membership", memberUnl: "Unlimited Membership",
+  member2x: "2x/week Membership", memberUnl: "Monthly",
   private1: "Private — 1 Class", private3: "Private — 3 Classes", private10: "Private — 10 Classes",
+  teacher: "Teacher (free)",
 };
+
+const INTERNAL_EMAILS = [
+  "info@iy-sp.com",
+  "info@iy-sp.org",
+  "etrix01@gmail.com",
+];
 
 // ═══════════════════════════════════════════════════════════
 // R1 — CHECK-IN REPORT
@@ -57,7 +87,7 @@ router.get("/checkin", adminAuth, async (req, res) => {
     if (req.query.classId) query.classId = req.query.classId;
 
     const classes  = await Class.find({});
-    const classMap = Object.fromEntries(classes.map(c => [c.id ?? c._id.toString(), c]));
+    const classMap = Object.fromEntries(classes.map(c => [c.id, c]));
 
     const bookings = await Booking.find(query);
 
@@ -109,17 +139,46 @@ router.get("/checkin", adminAuth, async (req, res) => {
 });
 
 // PATCH /api/bookings/:id/checkin  (add this to bookings.js or here for convenience)
-router.patch("/checkin/:bookingId", adminAuth, async (req, res) => {
+router.patch("/checkin/:bookingId", staffAuth, async (req, res) => {
   try {
     const { checkedIn } = req.body;
+    if (req.user.role !== "owner") {
+      const existing = await Booking.findById(req.params.bookingId, "classId").lean();
+      if (!existing || !(await canAccessClass(req.user, existing.classId)))
+        return res.status(403).json({ error: "Forbidden" });
+    }
     const booking = await Booking.findByIdAndUpdate(
       req.params.bookingId,
       { checkedIn: !!checkedIn, checkedInAt: checkedIn ? new Date() : null },
       { new: true }
     );
     if (!booking) return res.status(404).json({ error: "Booking not found." });
-    res.json({ booking });
-  } catch (err) {
+
+    // Welcome email on first ever check-in
+    if (checkedIn) {
+      const previousCheckins = await Booking.countDocuments({
+        studentEmail: booking.studentEmail,
+        checkedIn: true,
+        _id: { $ne: booking._id },
+      });
+      if (previousCheckins === 0) {
+        const student = await Student.findOne({ email: booking.studentEmail });
+        const pass = await Pass.findOne({ studentEmail: booking.studentEmail, active: true });
+        await sendWelcomeEmail({
+          studentEmail: booking.studentEmail,
+          studentName:  student?.name || booking.studentName,
+          passType:     pass?.type || booking.paymentType,
+          classesTotal: pass?.classesTotal || null,
+          expiresAt:    pass?.expiresAt || null,
+          passCode:     pass?.code || null,
+        });
+        console.log(`✓ Welcome email sent to ${booking.studentEmail}`);
+      }
+    }
+    res.json({ success: true, booking });
+
+    } catch (err) {
+    console.error("✗ Check-in error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -204,90 +263,120 @@ router.get("/first-visits", adminAuth, async (req, res) => {
 router.get("/payroll", adminAuth, async (req, res) => {
   try {
     const { from, to } = defaultRange(req);
+    const PASS_VALUE = {
+      dropin: 25, pass4: 21, pass8: 19,
+      member2x: 16, memberUnl: 14,
+      pass: 21, // fallback for legacy "pass" type
+    };
 
-    const classes  = await Class.find({});
-    const classMap = Object.fromEntries(classes.map(c => [c.id ?? c._id.toString(), c]));
-
-    // Get all confirmed bookings with check-in data
-    const bookings = await Booking.find({
-      date:   { $gte: from, $lte: to },
+    const classBookings = await Booking.find({
+      date: { $gte: from, $lte: to },
       status: "confirmed",
+      classId: { $not: /^(ws_|private__)/ },
     });
+    const classIds = [...new Set(classBookings.map(b => b.classId))];
+    const classDefs = await Class.find({ id: { $in: classIds } });
+    const classMap = Object.fromEntries(classDefs.map(c => [c.id, c]));
 
-    // Get workshop bookings separately
-    const workshopBookings = await Booking.find({
-      date:      { $gte: from, $lte: to },
-      status:    "confirmed",
-      classId:   { $regex: /^ws_/ },
-    });
+    // Only active teachers are eligible defaults — inactive/legacy records must never
+    // contribute a rate, even if their name happens to match.
+    const activeTeachers = await Teacher.find({ active: true });
 
-    // Group regular class bookings by classId + date
-    const groups = {};
-    for (const b of bookings) {
-      if (b.classId.startsWith("ws_") || b.classId.startsWith("private__")) continue;
-      const cls = classMap[b.classId];
-      const key = `${b.classId}__${b.date}`;
-      if (!groups[key]) {
-        groups[key] = {
-          classId:   b.classId,
-          date:      b.date,
-          title:     cls?.title   ?? b.classId,
-          teacher:   cls?.teacher ?? "Unknown",
-          attended:  0,  // checkedIn = true
-          booked:    0,  // all confirmed
-        };
-      }
-      groups[key].booked++;
-      if (b.checkedIn) groups[key].attended++;
+    // Class.teacher stores a free-text display name (e.g. "Tricia Amheiser") which doesn't
+    // always match Teacher.name exactly (e.g. "Tricia"). Match case-insensitively in either
+    // direction so a short Settings name still resolves against the full class teacher name.
+    function lookupTeacherRate(classTeacherName) {
+      if (!classTeacherName) return 0;
+      const needle = classTeacherName.trim().toLowerCase();
+      const exact = activeTeachers.find(t => t.name.trim().toLowerCase() === needle);
+      if (exact) return exact.payRate || 0;
+      const partial = activeTeachers.find(t => {
+        const n = t.name.trim().toLowerCase();
+        return n && (needle.includes(n) || n.includes(needle));
+      });
+      return partial?.payRate || 0;
     }
 
-    // Group by teacher and apply pay rates from Class model
+    const occurrences = {};
+    for (const b of classBookings) {
+      const key = b.classId + "__" + b.date;
+      if (!occurrences[key]) occurrences[key] = { classId: b.classId, date: b.date, attended: 0, grossRevenue: 0, breakdown: {} };
+      occurrences[key].attended++;
+      const val = PASS_VALUE[b.paymentType] || 0;
+      occurrences[key].grossRevenue += val;
+      occurrences[key].breakdown[b.paymentType] = (occurrences[key].breakdown[b.paymentType] || 0) + 1;
+    }
+
     const byTeacher = {};
-
-    for (const g of Object.values(groups)) {
-      const t = g.teacher;
-      if (!byTeacher[t]) byTeacher[t] = { teacher: t, rate: 0, ceiling: 0, classes: [], totalPay: 0 };
-      const cls = classMap[g.classId];
-      const rate    = cls?.ratePerStudent ?? 0;
-      const ceiling = cls?.ceiling        ?? null;
-      const rawPay  = g.attended * rate;
-      const pay     = ceiling ? Math.min(rawPay, ceiling) : rawPay;
-      g.rate    = rate;
-      g.ceiling = ceiling;
-      g.pay     = pay;
-      byTeacher[t].rate    = rate;
-      byTeacher[t].ceiling = ceiling;
-      byTeacher[t].totalPay += pay;
-      byTeacher[t].classes.push(g);
+    for (const occ of Object.values(occurrences)) {
+      const def = classMap[occ.classId];
+      const teacher = def?.teacher || "Unknown";
+      const title = def?.title || occ.classId;
+      // Per-class rate wins if set; otherwise fall back to the teacher's default pay rate.
+      const rate = def?.ratePerStudent || lookupTeacherRate(teacher);
+      const ceiling = def?.ceiling || 0;
+      const gross = occ.grossRevenue;
+      let teacherPay = rate > 0 ? occ.attended * rate : 0;
+      if (ceiling > 0 && teacherPay > ceiling) teacherPay = ceiling;
+      if (!byTeacher[teacher]) byTeacher[teacher] = [];
+      byTeacher[teacher].push({
+        date: occ.date, title, attended: occ.attended,
+        ratePerStudent: rate, ceiling,
+        grossRevenue: gross, teacherPay, studioTake: gross - teacherPay,
+        breakdown: occ.breakdown,
+      });
     }
+    for (const rows of Object.values(byTeacher)) rows.sort((a, b) => a.date.localeCompare(b.date));
 
-    // Workshop pay — placeholder for future % of revenue calc
-    // For now, workshops are listed separately with 0 pay until % rate is configured
-    const workshopGroups = {};
-    for (const b of workshopBookings) {
-      const key = b.classId;
-      if (!workshopGroups[key]) {
-        workshopGroups[key] = {
-          workshopId:    b.classId,
-          workshopTitle: b.workshopTitle ?? b.classId,
-          bookings:      0,
-        };
-      }
-      workshopGroups[key].bookings++;
+    const wsBookings = await Booking.find({
+      date: { $gte: from, $lte: to },
+      status: "confirmed",
+      classId: /^ws_/,
+    });
+    const wsGroups = {};
+    for (const b of wsBookings) {
+      if (!wsGroups[b.classId]) wsGroups[b.classId] = { workshopId: b.classId, title: b.workshopTitle || b.classId, bookings: [] };
+      wsGroups[b.classId].bookings.push(b);
     }
+    const wsIds = Object.keys(wsGroups);
+    const wsDefs = await Workshop.find({ id: { $in: wsIds } });
+    const wsDefMap = Object.fromEntries(wsDefs.map(w => [w.id, w]));
+
+    const workshopRows = Object.values(wsGroups).map(occ => {
+      const def = wsDefMap[occ.workshopId];
+      const split = def?.teacherSplit ?? 50;
+      const teacher = def?.teacher || "Unknown";
+      const tiers = Object.values(def?.pricing || {}).filter(v => typeof v === "number" && v > 0);
+      const price = tiers.length ? Math.min(...tiers) : 0;
+      const gross = occ.bookings.length * price;
+      const teacherPay = gross * (split / 100);
+      return {
+        date: occ.bookings.map(b => b.date).sort()[0] || from,
+        title: occ.title, teacher,
+        participants: occ.bookings.length, workshopPrice: price, teacherSplit: split,
+        grossRevenue: gross, teacherPay, studioTake: gross - teacherPay,
+      };
+    }).sort((a, b) => a.date.localeCompare(b.date));
+
+    const allClassRows = Object.values(byTeacher).flat();
+    const cT = allClassRows.reduce((a, r) => ({ gross: a.gross + r.grossRevenue, pay: a.pay + r.teacherPay, studio: a.studio + r.studioTake, attended: a.attended + r.attended }), { gross: 0, pay: 0, studio: 0, attended: 0 });
+    const wT = workshopRows.reduce((a, r) => ({ gross: a.gross + r.grossRevenue, pay: a.pay + r.teacherPay, studio: a.studio + r.studioTake, participants: a.participants + r.participants }), { gross: 0, pay: 0, studio: 0, participants: 0 });
 
     res.json({
-      from,
-      to,
-      teachers:   Object.values(byTeacher),
-      workshops:  Object.values(workshopGroups),
+      from, to,
+      classes: byTeacher,
+      workshops: workshopRows,
+      classTotals:    { grossRevenue: cT.gross, teacherPay: cT.pay, studioTake: cT.studio, attended: cT.attended },
+      workshopTotals: { grossRevenue: wT.gross, teacherPay: wT.pay, studioTake: wT.studio, participants: wT.participants },
+      grandTotal:     { grossRevenue: cT.gross + wT.gross, teacherPay: cT.pay + wT.pay, studioTake: cT.studio + wT.studio },
     });
   } catch (err) {
+    console.error("GET /api/reports/payroll error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ═══════════════════════════════════════════════════════════
+
 // R5 — MONTHLY REVENUE REPORT
 // GET /api/reports/monthly-revenue?month=YYYY-MM
 // ═══════════════════════════════════════════════════════════
@@ -310,8 +399,10 @@ router.get("/monthly-revenue", adminAuth, async (req, res) => {
 
     // Passes sold this month (non-dropin, non-membership)
     const passesSold = await Pass.find({
-      type:      { $in: ["pass4", "pass8", "private1", "private3", "private10"] },
-      createdAt: { $gte: monthStart, $lte: monthEnd },
+      type:           { $in: ["pass4", "pass8", "private1", "private3", "private10"] },
+      createdAt:      { $gte: monthStart, $lte: monthEnd },
+      purchaseStatus: { $in: ["complete", "admin"] },
+      studentEmail:   { $nin: INTERNAL_EMAILS },
     });
 
     // Group pass sales by type
@@ -322,17 +413,17 @@ router.get("/monthly-revenue", adminAuth, async (req, res) => {
       passSummary[p.type].total += PASS_PRICES[p.type] ?? 0;
     }
 
-    // Memberships collected this month (active memberships created or renewed this month)
-    const membershipsCollected = await Pass.find({
-      type:      { $in: ["member2x", "memberUnl"] },
-      createdAt: { $gte: monthStart, $lte: monthEnd },
+    const membershipRenewalsThisMonth = await MembershipRenewal.find({
+      type:         { $in: ["member2x", "memberUnl"] },
+      paidAt:       { $gte: monthStart, $lte: monthEnd },
+      studentEmail: { $nin: INTERNAL_EMAILS },
     });
 
     const membershipSummary = {};
-    for (const m of membershipsCollected) {
-      if (!membershipSummary[m.type]) membershipSummary[m.type] = { count: 0, total: 0, label: PASS_LABELS[m.type] };
-      membershipSummary[m.type].count++;
-      membershipSummary[m.type].total += PASS_PRICES[m.type] ?? 0;
+    for (const r of membershipRenewalsThisMonth) {
+      if (!membershipSummary[r.type]) membershipSummary[r.type] = { count: 0, total: 0, label: PASS_LABELS[r.type] };
+      membershipSummary[r.type].count++;
+      membershipSummary[r.type].total += netStripeAmount(r.amountPaid);
     }
 
     // Projected membership revenue — active memberships that renew later this month
@@ -349,7 +440,7 @@ router.get("/monthly-revenue", adminAuth, async (req, res) => {
     for (const m of pendingMemberships) {
       if (!projectedSummary[m.type]) projectedSummary[m.type] = { count: 0, total: 0, label: PASS_LABELS[m.type] };
       projectedSummary[m.type].count++;
-      projectedSummary[m.type].total += PASS_PRICES[m.type] ?? 0;
+      projectedSummary[m.type].total += NET_PASS_PRICES[m.type] ?? PASS_PRICES[m.type] ?? 0;
     }
 
     const dropinTotal      = dropins.length * PASS_PRICES.dropin;
@@ -438,6 +529,113 @@ router.get("/workshop-revenue", adminAuth, async (req, res) => {
   }
 });
 
+// R8 — Waiver report
+router.get('/waivers', adminAuth, async (req, res) => {
+  try {
+    const students = await Student.find(
+      { waiverSigned: true },
+      { name: 1, email: 1, waiverSignedAt: 1, waiverPdfPath: 1, _id: 0 }
+    ).sort({ waiverSignedAt: -1 });
+
+    res.json(students);
+  } catch (err) {
+    console.error('Waiver report error:', err);
+    res.status(500).json({ error: 'Failed to fetch waiver report' });
+  }
+});
+
+
+// ═══════════════════════════════════════════════════════════
+// R11 — VIDEO RENTALS
+// GET /api/reports/video-rentals?from=&to=   (default: last 90 days)
+// Who rents, how often, paid vs free, by video and by code.
+// ═══════════════════════════════════════════════════════════
+router.get("/video-rentals", adminAuth, async (req, res) => {
+  try {
+    const today = new Date();
+    const d90 = new Date(today);
+    d90.setDate(d90.getDate() - 89);
+    const from = req.query.from ?? toLocalDateStr(d90);
+    const to   = req.query.to   ?? toLocalDateStr(today);
+
+    const rentals = await Rental.find({
+      createdAt:    { $gte: new Date(`${from}T00:00:00`), $lte: new Date(`${to}T23:59:59.999`) },
+      studentEmail: { $nin: INTERNAL_EMAILS },
+    }).populate("video", "title").sort({ createdAt: -1 }).lean();
+
+    const emails = [...new Set(rentals.map(r => r.studentEmail))];
+    const [students, plans] = await Promise.all([
+      Student.find({ email: { $in: emails } }, { name: 1, email: 1 }).lean(),
+      Pass.find({
+        studentEmail: { $in: emails },
+        type: { $in: ["member2x", "memberUnl", "videoSub"] },
+        active: true,
+        $or: [{ expiresAt: null }, { expiresAt: { $gt: today } }],
+      }, { studentEmail: 1, type: 1 }).lean(),
+    ]);
+    const nameBy = Object.fromEntries(students.map(s => [s.email, s.name]));
+    const planBy = {};
+    for (const p of plans) {
+      const label = p.type === "videoSub" ? "Video subscription" : (PASS_LABELS[p.type] ?? p.type);
+      if (!planBy[p.studentEmail]) planBy[p.studentEmail] = [];
+      if (!planBy[p.studentEmail].includes(label)) planBy[p.studentEmail].push(label);
+    }
+
+    const codeOf = r => r.couponCode
+      || (String(r.stripePaymentIntentId).startsWith("coupon_")
+          ? String(r.stripePaymentIntentId).split("_").slice(1, -1).join("_") : null);
+
+    const byStudent = {}, byVideo = {}, byCode = {};
+    let revenueCents = 0, free = 0;
+    for (const r of rentals) {
+      const isFree = (r.amount ?? 0) === 0;
+      const title  = r.video?.title ?? "(deleted video)";
+      const code   = codeOf(r);
+      revenueCents += r.amount ?? 0;
+      if (isFree) free++;
+
+      const s = byStudent[r.studentEmail] ||= {
+        email: r.studentEmail, name: nameBy[r.studentEmail] ?? "",
+        plan: (planBy[r.studentEmail] ?? []).join(", "),
+        rentals: 0, paid: 0, free: 0, spentCents: 0, lastRentedAt: r.createdAt, titles: [],
+      };
+      s.rentals++; isFree ? s.free++ : s.paid++;
+      s.spentCents += r.amount ?? 0;
+      if (r.createdAt > s.lastRentedAt) s.lastRentedAt = r.createdAt;
+      if (!s.titles.includes(title)) s.titles.push(title);
+
+      const v = byVideo[title] ||= { title, rentals: 0, free: 0, revenueCents: 0, students: new Set() };
+      v.rentals++; if (isFree) v.free++; v.revenueCents += r.amount ?? 0; v.students.add(r.studentEmail);
+
+      if (code) {
+        const c = byCode[code] ||= { code, rentals: 0, free: 0, revenueCents: 0 };
+        c.rentals++; if (isFree) c.free++; c.revenueCents += r.amount ?? 0;
+      }
+    }
+
+    res.json({
+      from, to,
+      summary: {
+        rentals: rentals.length,
+        students: emails.length,
+        paid: rentals.length - free,
+        free,
+        revenueCents,
+        withCode: Object.values(byCode).reduce((n, c) => n + c.rentals, 0),
+      },
+      students: Object.values(byStudent)
+        .sort((a, b) => b.rentals - a.rentals || new Date(b.lastRentedAt) - new Date(a.lastRentedAt)),
+      videos: Object.values(byVideo)
+        .map(v => ({ ...v, students: v.students.size }))
+        .sort((a, b) => b.rentals - a.rentals),
+      codes: Object.values(byCode).sort((a, b) => b.rentals - a.rentals),
+    });
+  } catch (err) {
+    console.error("Video rentals report error:", err);
+    res.status(500).json({ error: "Failed to build video rentals report" });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════
 // EXISTING ROUTES (preserved)
 // ═══════════════════════════════════════════════════════════
@@ -452,22 +650,22 @@ router.get("/attendance", adminAuth, async (req, res) => {
     const to   = req.query.to   ?? toLocalDateStr(today);
 
     const classes  = await Class.find({});
-    const classMap = Object.fromEntries(classes.map(c => [c.id ?? c._id.toString(), c]));
+    const classMap = Object.fromEntries(classes.map(c => [c.id, c]));
     const bookings = await Booking.find({ date: { $gte: from, $lte: to } });
-
-    const PASS_REVENUE = { dropin:25, pass4:21, pass8:19, member2x:16, memberUnl:14, private1:0, private3:0, private10:0 };
 
     const groups = {};
     bookings.forEach(b => {
       const key = `${b.classId}__${b.date}`;
       if (!groups[key]) {
         const cls = classMap[b.classId];
-        groups[key] = { classId: b.classId, date: b.date, teacher: cls?.teacher ?? "Unknown", title: cls?.title ?? b.classId, confirmed: 0, cancelled: 0, attended: 0, revenue: 0 };
+        groups[key] = {
+          classId: b.classId, date: b.date,
+          teacher: cls?.teacher ?? "Unknown",
+          title:   cls?.title   ?? b.classId,
+          confirmed: 0, cancelled: 0,
+        };
       }
-      if (b.status === "confirmed") {
-        groups[key].confirmed++;
-        if (b.checkedIn) { groups[key].attended++; groups[key].revenue += PASS_REVENUE[b.paymentType] ?? 0; }
-      }
+      if (b.status === "confirmed") groups[key].confirmed++;
       if (b.status === "cancelled") groups[key].cancelled++;
     });
 
@@ -491,15 +689,17 @@ router.get("/revenue", adminAuth, async (req, res) => {
       createdAt: { $gte: from, $lte: to },
     });
     const passes = await Pass.find({
-      type: { $ne: "dropin" },
-      createdAt: { $gte: from, $lte: to },
+      type:           { $ne: "dropin" },
+      createdAt:      { $gte: from, $lte: to },
+      purchaseStatus: { $in: ["complete", "admin"] },
+      studentEmail:   { $nin: INTERNAL_EMAILS },
     });
 
     const passSummary = {};
     for (const p of passes) {
       if (!passSummary[p.type]) passSummary[p.type] = { count: 0, total: 0 };
       passSummary[p.type].count++;
-      passSummary[p.type].total += PASS_PRICES[p.type] ?? 0;
+      passSummary[p.type].total += NET_PASS_PRICES[p.type] ?? PASS_PRICES[p.type] ?? 0;
     }
 
     const dropinTotal = dropins.length * PASS_PRICES.dropin;
@@ -581,19 +781,55 @@ router.post("/pass-alerts/remind-all", adminAuth, async (req, res) => {
   }
 });
 
-module.exports = router;
+// ═══════════════════════════════════════════════════════════
+// QR CHECK-IN — added for native app scan screen (July 2026)
+// ═══════════════════════════════════════════════════════════
 
-// R8 — Waiver report
-router.get('/waivers', adminAuth, async (req, res) => {
+// GET /api/reports/checkin/:bookingId — resolve a single booking. Used by the
+// native app's scan screen after it decodes "florium-checkin:<bookingId>" from
+// the QR embedded in the Brevo confirmation email.
+router.get("/checkin/:bookingId", staffAuth, async (req, res) => {
   try {
-    const students = await Student.find(
-      { waiverSigned: true },
-      { name: 1, email: 1, waiverSignedAt: 1, waiverPdfPath: 1, _id: 0 }
-    ).sort({ waiverSignedAt: -1 });
+    const booking = await Booking.findById(req.params.bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    if (!(await canAccessClass(req.user, booking.classId))) return res.status(403).json({ error: "Forbidden" });
 
-    res.json(students);
+    const cls = await Class.findOne({ id: booking.classId });
+
+    res.json({
+      booking: {
+        _id:          booking._id,
+        studentName:  booking.studentName,
+        studentEmail: booking.studentEmail,
+        status:       booking.status,
+        checkedIn:    booking.checkedIn,
+        paymentType:  booking.paymentType,
+        classId:      booking.classId,
+        date:         booking.date,
+        classTitle:   cls?.title ?? booking.classId,
+        classTime:    cls?.time ?? null,
+      },
+    });
   } catch (err) {
-    console.error('Waiver report error:', err);
-    res.status(500).json({ error: 'Failed to fetch waiver report' });
+    res.status(404).json({ error: "Booking not found." });
   }
 });
+
+// GET /api/reports/checkin/:bookingId/qr — public PNG for the <img src> in the
+// confirmation email. Deliberately has NO adminAuth: mail clients fetch this
+// with no Authorization header. Safe because it's keyed on a Mongo ObjectId,
+// same trust level as the existing reschedule/cancel links.
+router.get("/checkin/:bookingId/qr", async (req, res) => {
+  try {
+    const QRCode = require("qrcode");
+    const payload = `florium-checkin:${req.params.bookingId}`;
+    const png = await QRCode.toBuffer(payload, { width: 280, margin: 1 });
+    res.set("Content-Type", "image/png");
+    res.set("Cache-Control", "public, max-age=31536000, immutable");
+    res.send(png);
+  } catch (err) {
+    res.status(500).end();
+  }
+});
+
+module.exports = router;

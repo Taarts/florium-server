@@ -1,7 +1,10 @@
 // ── ADD THIS TO server/emails/ as waiverConfirmation.js ──────────────────────
-const STUDIO_NAME  = process.env.STUDIO_NAME  || "Florium Studio";
-const STUDIO_EMAIL = process.env.STUDIO_EMAIL || "info@florium.live";
-const PRICING_URL  = process.env.PRICING_URL  || "https://florium.live/pricing";
+
+// const ZOOM_LINK    = process.env.ZOOM_LINK;
+const PRICING_URL  = process.env.PRICING_URL  || "https://iy-sp.com/pricing";
+// const MY_BOOKINGS  = process.env.MY_BOOKINGS_URL || "https://iy-sp.com/my-bookings";
+const STUDIO_NAME  = process.env.STUDIO_NAME  || "Iyengar Yoga St. Petersburg";
+const STUDIO_EMAIL = process.env.STUDIO_EMAIL || "info@iy-sp.com";
 const s            = require("./emailStyles");
 
 function waiverConfirmationHtml({ studentName, signedAt }) {
@@ -49,24 +52,24 @@ function waiverConfirmationHtml({ studentName, signedAt }) {
                   <td style="padding:10px 20px;color:${s.colorTextMuted};font-size:13px;width:38%;">Signed by</td>
                   <td style="padding:10px 20px;font-size:14px;color:${s.colorTextDark};font-weight:500;">${studentName}</td>
                 </tr>
-                <tr style="background: ${s.colorBgLight};border-top:1px solid ${s.colorBorder};">
+                <tr style="background:${s.colorBgRow};border-top:1px solid ${s.colorBorderLight};">
                   <td style="padding:10px 20px;color:${s.colorTextMuted};font-size:13px;">Date</td>
                   <td style="padding:10px 20px;font-size:14px;color:${s.colorTextDark};">${formattedDate}</td>
                 </tr>
-                <tr style="border-top:1px solid ${s.colorBorder};">
+                <tr style="border-top:1px solid ${s.colorBorderLight};">
                   <td style="padding:10px 20px;color:${s.colorTextMuted};font-size:13px;">Studio</td>
                   <td style="padding:10px 20px;font-size:14px;color:${s.colorTextDark};">${STUDIO_NAME}</td>
                 </tr>
               </table>
 
-              <div style="margin:20px 0;padding:16px 20px;background:${s.colorBgLight};border-left:3px solid ${s.colorGold};border-radius:0 6px 6px 0;">
+              <div style="margin:20px 0;padding:16px 20px;background:${s.colorBgAccent};border-left:3px solid ${s.colorCoral};border-radius:0 6px 6px 0;">
                 <p style="margin:0;font-size:13px;color:${s.colorTextBody};line-height:1.6;">
                   Your waiver remains on file for the duration of your enrollment.
                   You will not need to sign again for future classes.
                 </p>
               </div>
 
-              <p style="margin:16px 0 0;font-size:13px;color:#6b6b8a;line-height:1.6;">
+              <p style="margin:16px 0 0;font-size:13px;color:${s.colorTextMuted};line-height:1.6;">
                 Questions? Contact us at
                 <a href="mailto:${STUDIO_EMAIL}" style="color:${s.colorPrimary};text-decoration:none;">${STUDIO_EMAIL}</a>.
               </p>

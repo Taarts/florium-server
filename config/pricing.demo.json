@@ -1,0 +1,6 @@
+{
+  "memberships": {
+    "member2x":  { "label": "Member",    "sub": "2 classes per week", "display": 120, "actualCharge": 123.89, "agreementLabel": "Member (2x/week) Membership" },
+    "memberUnl": { "label": "Unlimited", "sub": "One class per day",  "display": 160, "actualCharge": 165.09, "agreementLabel": "Unlimited Membership" }
+  }
+}

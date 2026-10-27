@@ -1,15 +1,14 @@
-const ZOOM_LINK    = process.env.ZOOM_LINK;
-const STUDIO_NAME  = process.env.STUDIO_NAME  || "Florium Studio";
-const STUDIO_EMAIL = process.env.STUDIO_EMAIL || "info@florium.live";
-const PRICING_URL  = process.env.PRICING_URL  || "https://florium.live/pricing";
-const MY_BOOKINGS  = process.env.MY_BOOKINGS_URL || "https://florium.live/my-bookings";
-const s            = require("./emailStyles");
+const PRICING_URL = process.env.PRICING_URL || 'https://iy-sp.com/pricing';
+const STUDIO_NAME  = process.env.STUDIO_NAME  || "Iyengar Yoga St. Petersburg";
+// const STUDIO_EMAIL = process.env.STUDIO_EMAIL || "info@iy-sp.com";
+const CONTACT_EMAIL = 'info@iy-sp.com';
+const s = require("./emailStyles");
 
 const PASS_LABELS = {
   pass4:     '4-Class Pass',
   pass8:     '8-Class Pass',
   member2x:  '2x Weekly Membership',
-  memberUnl: 'Unlimited Membership',
+  memberUnl: 'Monthly',
   private1:  '1-Class Private Pass',
   private3:  '3-Class Private Pass',
   private10: '10-Class Private Pass',
@@ -51,10 +50,10 @@ function passReminderHtml({ studentName, passType, classesRemaining, expiresAt }
           <!-- Logo pill -->
           <tr>
             <td style="background:${s.colorBgLight}; padding:28px 40px 20px; text-align:center;
-                        border-bottom:1px solid ${s.colorBorder};">
-              <div style="display:inline-block; padding:8px 20px; border:1px solid ${s.colorBorder};
+                        border-bottom:1px solid  ${s.colorBorder};">
+              <div style="display:inline-block; padding:8px 20px; border:1px solid  ${s.colorBorder};
                            border-radius:6px; color:${s.colorPrimary}; font-size:13px; letter-spacing:0.08em;
-                           text-transform:uppercase;">Iyengar Yoga · St. Petersburg</div>
+                           text-transform:uppercase;">${STUDIO_NAME}</div>
             </td>
           </tr>
 
@@ -71,42 +70,42 @@ function passReminderHtml({ studentName, passType, classesRemaining, expiresAt }
           <!-- Body -->
           <tr>
             <td style="padding:32px 40px;">
-              <p style="margin:0 0 20px; font-size:15px; color: ${s.colorTextBody}; line-height:1.6;">
+              <p style="margin:0 0 20px; font-size:15px; color:${s.colorTextBody}; line-height:1.6;">
                 Hi ${studentName},
               </p>
-              <p style="margin:0 0 24px; font-size:15px; color: ${s.colorTextBody}; line-height:1.6;">
+              <p style="margin:0 0 24px; font-size:15px; color:${s.colorTextBody}; line-height:1.6;">
                 Just a heads up — your <strong>${label}</strong> is ${reasonText}. We'd love to keep seeing you on the mat!
               </p>
 
               <!-- Pass details -->
               <table width="100%" cellpadding="0" cellspacing="0"
-                style="border:1px solid ${s.colorBorder}; border-radius:8px; overflow:hidden; margin-bottom:24px;">
+                style="border:1px solid  ${s.colorBorder}; border-radius:8px; overflow:hidden; margin-bottom:24px;">
                 <tr style="background:${s.colorBgLight};">
                   <td colspan="2" style="padding:12px 20px; font-size:11px; font-weight:600;
                       color:${s.colorPrimary}; letter-spacing:0.1em; text-transform:uppercase;">Your Pass</td>
                 </tr>
-                <tr style="border-top:1px solid ${s.colorBorder};">
+                <tr style="border-top:1px solid  ${s.colorBorder};">
                   <td style="padding:10px 20px; color:${s.colorTextMuted}; font-size:13px; width:38%;">Type</td>
                   <td style="padding:10px 20px; font-size:14px; color:${s.colorTextDark}; font-weight:500;">${label}</td>
                 </tr>
-                <tr style="background:${s.colorBgLight}; border-top:1px solid ${s.colorBorder};">
+                <tr style="background:${s.colorBgRow}; border-top:1px solid ${s.colorBorderLight};">
                   <td style="padding:10px 20px; color:${s.colorTextMuted}; font-size:13px;">Classes remaining</td>
                   <td style="padding:10px 20px; font-size:14px; color:${s.colorTextDark};">${classesRemaining}</td>
                 </tr>
                 ${expiryDate ? `
-                <tr style="border-top:1px solid ${s.colorBorder};">
+                <tr style="border-top:1px solid ${s.colorBorderLight};">
                   <td style="padding:10px 20px; color:${s.colorTextMuted}; font-size:13px;">Expires</td>
                   <td style="padding:10px 20px; font-size:14px; color:#c0392b;">${expiryDate}</td>
                 </tr>` : ''}
               </table>
 
               <!-- CTA -->
-              <div style="margin:0 0 24px; padding:16px 20px; background:${s.colorBgLight};
-                           border-left:3px solid ${s.colorGold}; border-radius:0 6px 6px 0;">
+              <div style="margin:0 0 24px; padding:16px 20px; background:${s.colorBgAccent};
+                           border-left:3px solid ${s.colorCoral}; border-radius:0 6px 6px 0;">
                 <p style="margin:0 0 10px; font-size:14px; color:#3d2244; font-weight:600;">
                   Ready to renew?
                 </p>
-                <p style="margin:0 0 14px; font-size:14px; color: ${s.colorTextBody}; line-height:1.7;">
+                <p style="margin:0 0 14px; font-size:14px; color:${s.colorTextBody}; line-height:1.7;">
                   Visit our pricing page to purchase a new pass online, or reply to this email
                   to arrange payment directly — no processing fee.
                 </p>
@@ -127,8 +126,8 @@ function passReminderHtml({ studentName, passType, classesRemaining, expiresAt }
           <!-- Footer -->
           <tr>
             <td style="padding:20px 40px; background:${s.colorBgPage}; text-align:center;
-                        border-top:1px solid ${s.colorBorder};">
-              <p style="margin:0 0 4px; font-size:12px; color:${s.colorTextMuted};">${STUDIO_NAME}</p>
+                        border-top:1px solid  ${s.colorBorder};">
+              <p style="margin:0 0 4px; font-size:12px; color:${s.colorTextMuted};">Iyengar Yoga St. Petersburg</p>
               <p style="margin:0; font-size:12px; color:${s.colorTextMuted};">
                 <a href="${PRICING_URL}" style="color:${s.colorPrimary}; text-decoration:none;">Passes &amp; Memberships</a>
                 &nbsp;·&nbsp;

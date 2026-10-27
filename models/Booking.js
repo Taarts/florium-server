@@ -23,7 +23,7 @@ const bookingSchema = new mongoose.Schema(
     },
     paymentType: {
       type: String,
-      enum: ["dropin", "pass4", "pass8", "member2x", "memberUnl", "private1", "private3", "private10"],
+      enum: ["dropin", "pass4", "pass8", "member2x", "memberUnl", "private1", "private3", "private10", "teacher"],
       required: true,
     },
     passId: {
@@ -57,6 +57,10 @@ const bookingSchema = new mongoose.Schema(
     workshopTitle: { type: String, default: null },
     sessionLabel:  { type: String, default: null },
     sessionTime:   { type: String, default: null },
+    // ── Private booking fields ───────────────────────────────
+    time:     { type: String, default: null },
+    duration: { type: Number, default: null },
+    location: { type: String, default: null },
   },
   { timestamps: true }
 );

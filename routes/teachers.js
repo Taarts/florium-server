@@ -2,11 +2,14 @@ const express   = require("express");
 const router    = express.Router();
 const Teacher   = require("../models/Teacher");
 const adminAuth = require("../middleware/auth");
+const { optionalAuth } = require("../middleware/auth");
 
 // GET /api/teachers
-router.get("/", async (req, res, next) => {
+// Public: name, bio, image only. Owner token: full records (email, pay rate).
+router.get("/", optionalAuth, async (req, res, next) => {
   try {
-    const teachers = await Teacher.find({ active: true }).sort({ name: 1 });
+    const isOwner  = req.user?.role === "owner";
+    const teachers = await Teacher.find({ active: true }, isOwner ? undefined : "name bio image").sort({ name: 1 });
     res.json({ teachers });
   } catch (err) { next(err); }
 });

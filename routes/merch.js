@@ -6,7 +6,7 @@ const adminAuth = require("../middleware/auth");
 
 function generateSKU() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let sku = "FLO-";
+  let sku = "IYSP-";
   for (let i = 0; i < 5; i++) sku += chars[Math.floor(Math.random() * chars.length)];
   return sku;
 }
@@ -22,9 +22,12 @@ router.get("/products", adminAuth, async (req, res) => {
 // ── POST /api/merch/products ──────────────────────────────
 router.post("/products", adminAuth, async (req, res) => {
   try {
-    const { name, category, price, stock } = req.body;
+    const { name, category, price, cost, stock, taxable } = req.body;
     if (!name || price == null) return res.status(400).json({ error: "Name and price are required." });
-    const product = await Product.create({ name, category, price, stock: stock ?? 0, sku: generateSKU() });
+    const product = await Product.create({
+      name, category: category || undefined, price, cost: cost ?? 0, stock: stock ?? 0,
+      taxable: taxable !== false, sku: generateSKU(),
+    });
     res.status(201).json({ product });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -97,14 +100,16 @@ router.get("/report", adminAuth, async (req, res) => {
     const productMap = {};
     for (const p of products) productMap[p._id.toString()] = p;
 
-    // Tax rate — Florida default 7%
-    const TAX_RATE = 0.07;
+    // Tax rate (services/posOrders.js; Florida 7% unless SALES_TAX_RATE is set)
+    const { TAX_RATE } = require("../services/posOrders");
 
     const byProduct = {};
     for (const s of sales) {
       const id  = s.productId.toString();
       const p   = productMap[id];
-      const tax = p?.taxable ? s.total * TAX_RATE : 0;
+      // Terminal sales store tax on top of total; older sales are treated as tax-inclusive.
+      const taxOnTop = s.tax !== null && s.tax !== undefined;
+      const tax = taxOnTop ? s.tax : (p?.taxable ? s.total * TAX_RATE : 0);
       const cogs = (p?.cost ?? 0) * s.quantity;
 
       if (!byProduct[id]) byProduct[id] = {
@@ -115,9 +120,9 @@ router.get("/report", adminAuth, async (req, res) => {
       byProduct[id].revenue  += s.total;
       byProduct[id].cogs     += cogs;
       byProduct[id].tax      += tax;
-      byProduct[id].profit   += s.total - cogs - tax;
-      if (s.paymentMethod === "cash") byProduct[id].cash += s.total;
-      else                            byProduct[id].card += s.total;
+      byProduct[id].profit   += s.total - cogs - (taxOnTop ? 0 : tax);
+      if (s.paymentMethod === "cash")      byProduct[id].cash += s.total;
+      else if (s.paymentMethod === "card") byProduct[id].card += s.total;
     }
 
     const grandRevenue = Object.values(byProduct).reduce((s, p) => s + p.revenue, 0);
