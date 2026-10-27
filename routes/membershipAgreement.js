@@ -161,7 +161,11 @@ router.post('/sign', async (req, res) => {
       pdfS3Key:         s3Key,
     });
 
-    await sendMembershipAgreementEmail({ name, email, membershipType, pdfBuffer });
+    try {
+      await sendMembershipAgreementEmail({ name, email, membershipType, pdfBuffer });
+    } catch (mailErr) {
+      console.error('✗ Agreement email failed:', mailErr.message);
+    }
 
     res.json({ success: true });
   } catch (err) {

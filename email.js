@@ -891,7 +891,24 @@ async function sendBulkEmail({ email, name, subject, bodyText, signatureHtml = "
 
 
 
+async function sendMembershipAgreementEmail({ name, email, membershipType, pdfBuffer }) {
+  const { memberships } = require("./config/pricing");
+  const label = (memberships[membershipType] && memberships[membershipType].agreementLabel) || "Membership";
+  const safeName = String(name || "").replace(/[<>&"]/g, "");
+  const result = await brevoClient.transactionalEmails.sendTransacEmail({
+    sender: { name: FROM_NAME, email: FROM_EMAIL },
+    to: [{ email }],
+    bcc: [{ email: MAIL_BCC }],
+    subject: `Your signed ${label} agreement — ${FROM_NAME}`,
+    htmlContent: `<p>Hi ${safeName},</p><p>Your signed ${label} agreement is attached for your records.</p><p>Questions? Reply to this email or write to ${MAIL_CONTACT}.</p>`,
+    attachment: [{ content: pdfBuffer.toString("base64"), name: "membership-agreement.pdf" }],
+  });
+  console.log("✓ Membership agreement email sent to", email);
+  return result;
+}
+
 module.exports = {
+  sendMembershipAgreementEmail,
   sendBulkEmail,
   sendBookingConfirmation,
   sendWorkshopConfirmationEmail,
