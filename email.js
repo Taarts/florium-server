@@ -891,7 +891,7 @@ async function sendBulkEmail({ email, name, subject, bodyText, signatureHtml = "
 
 
 
-async function sendMembershipAgreementEmail({ name, email, membershipType, pdfBuffer }) {
+async function sendMembershipAgreementEmail({ name, email, membershipType, pdfBuffer, studioName }) {
   const { memberships } = require("./config/pricing");
   const label = (memberships[membershipType] && memberships[membershipType].agreementLabel) || "Membership";
   const safeName = String(name || "").replace(/[<>&"]/g, "");
@@ -899,7 +899,7 @@ async function sendMembershipAgreementEmail({ name, email, membershipType, pdfBu
     sender: { name: FROM_NAME, email: FROM_EMAIL },
     to: [{ email }],
     bcc: [{ email: MAIL_BCC }],
-    subject: `Your signed ${label} agreement — ${FROM_NAME}`,
+    subject: `Your signed ${label} agreement — ${studioName || FROM_NAME}`,
     htmlContent: `<p>Hi ${safeName},</p><p>Your signed ${label} agreement is attached for your records.</p><p>Questions? Reply to this email or write to ${MAIL_CONTACT}.</p>`,
     attachment: [{ content: pdfBuffer.toString("base64"), name: "membership-agreement.pdf" }],
   });
