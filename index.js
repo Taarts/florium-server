@@ -33,7 +33,7 @@ const rateLimit = require("express-rate-limit");
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 200,
-  skip: req => req.path.startsWith("/uploads/images/") || Boolean(require("./middleware/auth").peekToken(req)),
+  skip: req => req.path.startsWith("/uploads/images/") || /^\/social\/(cards|videos)\//.test(req.path) || Boolean(require("./middleware/auth").peekToken(req)),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later." },
@@ -82,6 +82,7 @@ app.use("/api/videos", videosRouter);
 app.use("/api/venues",   venuesRouter);
 app.use("/api/blocks",   require("./routes/blocks"));
 app.use("/api/newsletter", require("./routes/newsletter"));
+app.use("/api/social",     require("./routes/social")(require("./middleware/auth").adminAuth));
 app.use("/api/signatures", require("./routes/signatures"));
 app.use("/api/forms", require("./routes/forms"));
 app.use("/api/membership-agreement", membershipAgreementRouter);
