@@ -98,7 +98,10 @@ async function graphJson(res, label) {
   if (!res.ok || data.error) {
     const e = data.error || {};
     const detail = e.error_user_msg || e.message || `HTTP ${res.status}`;
-    throw new Error(`${label}: ${detail}${e.code ? ` (code ${e.code}${e.error_subcode ? '/' + e.error_subcode : ''})` : ''}`);
+    const err = new Error(`${label}: ${detail}${e.code ? ` (code ${e.code}${e.error_subcode ? '/' + e.error_subcode : ''})` : ''}`);
+    err.graphCode = e.code;
+    err.graphSubcode = e.error_subcode;
+    throw err;
   }
   return data;
 }
@@ -151,7 +154,14 @@ async function publishFacebookReel(ctx, payload) {
 
   // Processing runs on Meta's side; report a failure if it shows up quickly.
   for (let i = 0; i < ctx.fbReelPollTries; i++) {
-    const { status } = await graphGet(ctx, videoId, 'status');
+    let status;
+    try {
+      ({ status } = await graphGet(ctx, videoId, 'status'));
+    } catch (err) {
+      // Right after finish the video can briefly be unreadable (100/33) even though it publishes.
+      if (err.graphCode === 100 && err.graphSubcode === 33) { await sleep(ctx.igPollMs); continue; }
+      throw err;
+    }
     const vs = status && status.video_status;
     if (vs === 'error') {
       const why = ['uploading_phase', 'processing_phase', 'publishing_phase'].map(k => status[k]?.errors?.[0]?.message).find(Boolean);
