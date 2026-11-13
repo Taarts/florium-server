@@ -8,7 +8,7 @@
 // GET  /api/social/cards/:file.jpg         → a generated post image
 // GET  /api/social/videos/:file(.mp4|.jpg) → a prepared short + its poster frame
 //
-// Admin only:
+// Owners and teachers (teachers write drafts for approval; only owners publish):
 // GET  /api/social/status                  → { "iy-sp": { facebook, instagram, bluesky }, "flourish": {…} }
 // GET  /api/social/palettes                → each studio's card colours (config/socialPalettes.js)
 // POST /api/social/card     { studio, card }               → renders + saves a card → image object
@@ -18,6 +18,7 @@
 // POST /api/social/video    multipart: video (file), fit? 'blur'|'crop', start?, end?  → { jobId }
 //                           job result = video object for post.video (socialVideo.prepareVideo)
 // GET  /api/social/jobs/:id → { status: 'running'|'done'|'error', result?, error? }
+// Saved posts (teacher drafts → owner approval, like Newsletters): see the /posts routes at the bottom.
 //
 // card = { layout?: 'card'|'frame'|'photo'|'collage', kicker?, title, lines?, footer?, photo?: url,
 //          photos?: [url] (collage 2–4), framed?: bool (collage), arrange?: 'rows'|'cols' (2-photo collage),
@@ -42,6 +43,8 @@ const { publishToSocial, connectedPlatforms, formatForSocial } = require('../soc
 const { defaultPlatforms } = require('../socialFormat');
 const { renderCard, saveCard, paletteFor, CARD_DIR, CARD_FILE_RE, PALETTES, LAYOUTS } = require('../socialCard');
 const { prepareVideo, localPathFor, sweepVideos, VIDEO_DIR, VIDEO_FILE_RE } = require('../socialVideo');
+const { requireAuth } = require('../middleware/auth');
+const SocialPost = require('../models/SocialPost');
 
 let STUDIOS = [], DEMO_MODE = false;
 try { ({ STUDIOS = [], DEMO_MODE = false } = require('../config/studio')); } catch { /* single-studio server */ }
@@ -89,9 +92,18 @@ module.exports = function socialRoutes(requireAdmin) {
     res.sendFile(path.join(VIDEO_DIR, req.params.file), err => { if (err && !res.headersSent) res.status(404).end(); });
   });
 
-  router.use(requireAdmin);
+  router.use(requireAuth('owner', 'teacher'));   // /publish adds requireAdmin: owners only
 
   const fail = (status, message) => Object.assign(new Error(message), { status });
+  const isOwner = req => !!req.user && req.user.role === 'owner';
+  const author = req => ({ userId: req.user.id, name: req.user.name || '', email: req.user.email || '', role: req.user.role });
+
+  // Teachers only write for the studio(s) on their login
+  const studioOk = (req, s) => {
+    const theirs = (req.user && req.user.studios) || [];
+    if (MULTI && !isOwner(req) && theirs.length && !theirs.includes(s)) throw fail(403, 'You can only write posts for your own studio.');
+    return s;
+  };
 
   const pickPlatforms = (platforms, post) => {
     const list = Array.isArray(platforms) && platforms.length ? platforms : defaultPlatforms(post);
@@ -148,7 +160,7 @@ module.exports = function socialRoutes(requireAdmin) {
   router.post('/card', async (req, res) => {
     try {
       const { studio, card } = req.body || {};
-      res.json(await makeCard(pickStudio(studio, true), card));
+      res.json(await makeCard(studioOk(req, pickStudio(studio, true)), card));
     } catch (e) { send(res, e); }
   });
 
@@ -157,14 +169,26 @@ module.exports = function socialRoutes(requireAdmin) {
       const { post, platforms, studio } = req.body || {};
       if (!post) return res.status(400).json({ error: 'post is required' });
       const p = { ...post };
-      if (p.card) p.images = [await makeCard(pickStudio(studio, true), p.card), ...(p.images || [])];
+      if (p.card) p.images = [await makeCard(studioOk(req, pickStudio(studio, true)), p.card), ...(p.images || [])];
       res.json({ images: p.images || [], ...formatForSocial(p, pickPlatforms(platforms, p)) });
     } catch (e) { send(res, e); }
   });
 
-  router.post('/publish', async (req, res) => {
+  // A saved post's status after publishing (postId from /posts)
+  const record = async (postId, req, results, err) => {
+    if (!postId) return;
+    const ok = !err && Object.values(results || {}).some(r => r && r.ok);
+    const set = err
+      ? { status: 'failed', error: err.message }
+      : { status: ok ? 'posted' : 'failed', results, postedAt: new Date(), postedBy: author(req),
+          error: ok ? '' : Object.values(results || {}).map(r => r && r.error).filter(Boolean).join(' · ') };
+    await SocialPost.updateOne({ _id: postId }, { $set: set })
+      .catch(e => console.error('✗ [social] could not record post', postId, e.message));
+  };
+
+  router.post('/publish', requireAdmin, async (req, res) => {
     try {
-      const { post, platforms, studio } = req.body || {};
+      const { post, platforms, studio, postId } = req.body || {};
       if (!post) return res.status(400).json({ error: 'post is required' });
       const s = pickStudio(studio, true);
       const p = { ...post };
@@ -177,8 +201,21 @@ module.exports = function socialRoutes(requireAdmin) {
           ? { ok: true, demo: true, warnings: f[k].warnings }
           : { ok: false, error: f[k].errors.join(' '), warnings: f[k].warnings }])));
       }
+      // Saved post: claim it so it can only go out once
+      if (postId) {
+        if (!/^[a-f0-9]{24}$/.test(String(postId))) throw fail(400, 'Bad postId');
+        const claimed = await SocialPost.findOneAndUpdate(
+          { _id: postId, status: { $in: ['draft', 'submitted', 'failed'] } },
+          { $set: { status: 'posting', error: '' } },
+        );
+        if (!claimed) throw fail(409, 'This post has already been posted (or is posting now).');
+      }
       const run = async () => {
-        const results = await publishToSocial(p, { studio: accountFor(s), platforms: list, resolveLocal: localPathFor });
+        let results;
+        try {
+          results = await publishToSocial(p, { studio: accountFor(s), platforms: list, resolveLocal: localPathFor });
+        } catch (e) { await record(postId, req, null, e); throw e; }
+        await record(postId, req, results);
         console.log('[social] publish', s || '-', p.video ? 'video' : '', JSON.stringify(Object.fromEntries(
           Object.entries(results).map(([k, r]) => [k, r.ok ? r.url || r.id : `ERR ${r.error}`]),
         )));
@@ -208,6 +245,111 @@ module.exports = function socialRoutes(requireAdmin) {
     const job = jobs.get(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found (finished over 2 hours ago, or the server restarted).' });
     res.json({ status: job.status, ...(job.result ? { result: job.result } : {}), ...(job.error ? { error: job.error } : {}) });
+  });
+
+  // ═══ Saved posts: teacher drafts → owner approval (same flow as Newsletters) ═══
+  // GET    /posts?studio=              → { posts } (no form) — owner: everyone's, waiting first; teacher: their own
+  // GET    /posts/:id                  → { post } with form
+  // POST   /posts      { studio, form } → new draft
+  // PUT    /posts/:id  { form }         → teacher: own drafts; owner: drafts, submitted, failed
+  // DELETE /posts/:id                  → teacher: own drafts; owner: anything not posting
+  // POST   /posts/:id/submit           → draft → submitted
+  // POST   /posts/:id/return { note? } → submitted → draft (owner returns with a note; teacher withdraws)
+  // Owner posts a saved one with POST /publish { …, postId } → posting → posted | failed
+  const mine      = req => (isOwner(req) ? {} : { 'createdBy.userId': req.user.id });
+  const editable  = req => (isOwner(req) ? ['draft', 'submitted', 'failed'] : ['draft']);
+  const deletable = req => (isOwner(req) ? ['draft', 'submitted', 'failed', 'posted'] : ['draft']);
+  const idOk = (req, res, next) => (/^[a-f0-9]{24}$/.test(req.params.id) ? next() : res.status(404).json({ error: 'Not found.' }));
+
+  const cleanForm = form => {
+    if (!form || typeof form !== 'object' || Array.isArray(form)) throw fail(400, 'form is required');
+    if (JSON.stringify(form).length > 200000) throw fail(400, 'This post is too large to save.');
+    return form;
+  };
+  const describe = f => {
+    const text = String(f.body || f.cardTitle || f.ytTitle || '').trim().replace(/\s+/g, ' ');
+    return {
+      summary: text ? text.slice(0, 120) : f.video ? 'Video post' : 'Post',
+      thumb: (f.video && f.video.poster) || f.cardPhoto || (f.cardPhotos && f.cardPhotos[0])
+        || (f.photos && f.photos[0] && f.photos[0].url) || '',
+    };
+  };
+
+  router.get('/posts', async (req, res) => {
+    try {
+      const q = { ...mine(req) };
+      if (MULTI && req.query.studio) q.studio = String(req.query.studio);
+      const posts = await SocialPost.find(q).select('-form').sort({ createdAt: -1 }).limit(40).lean();
+      if (isOwner(req)) posts.sort((a, b) => (b.status === 'submitted') - (a.status === 'submitted'));
+      res.json({ posts });
+    } catch (e) { send(res, e); }
+  });
+
+  router.get('/posts/:id', idOk, async (req, res) => {
+    try {
+      const post = await SocialPost.findOne({ _id: req.params.id, ...mine(req) }).lean();
+      if (!post) return res.status(404).json({ error: 'Not found.' });
+      res.json({ post });
+    } catch (e) { send(res, e); }
+  });
+
+  router.post('/posts', async (req, res) => {
+    try {
+      const { studio, form } = req.body || {};
+      const f = cleanForm(form);
+      const s = studioOk(req, pickStudio(studio, true));
+      res.status(201).json({ post: await SocialPost.create({ studio: s, form: f, ...describe(f), createdBy: author(req) }) });
+    } catch (e) { send(res, e); }
+  });
+
+  router.put('/posts/:id', idOk, async (req, res) => {
+    try {
+      const f = cleanForm((req.body || {}).form);
+      const post = await SocialPost.findOneAndUpdate(
+        { _id: req.params.id, ...mine(req), status: { $in: editable(req) } },
+        { $set: { form: f, ...describe(f) } },
+        { new: true },
+      );
+      if (!post) {
+        return res.status(409).json({ error: isOwner(req)
+          ? "Posted posts can't be edited."
+          : 'Only your drafts can be edited. Withdraw a submitted post to change it.' });
+      }
+      res.json({ post });
+    } catch (e) { send(res, e); }
+  });
+
+  router.delete('/posts/:id', idOk, async (req, res) => {
+    try {
+      const doc = await SocialPost.findOneAndDelete({ _id: req.params.id, ...mine(req), status: { $in: deletable(req) } });
+      if (!doc) return res.status(409).json({ error: 'Only drafts can be deleted.' });
+      res.json({ ok: true });
+    } catch (e) { send(res, e); }
+  });
+
+  router.post('/posts/:id/submit', idOk, async (req, res) => {
+    try {
+      const post = await SocialPost.findOneAndUpdate(
+        { _id: req.params.id, ...mine(req), status: 'draft' },
+        { $set: { status: 'submitted', submittedAt: new Date(), reviewNote: '' } },
+        { new: true },
+      );
+      if (!post) return res.status(409).json({ error: 'Only drafts can be submitted.' });
+      res.json({ post });
+    } catch (e) { send(res, e); }
+  });
+
+  router.post('/posts/:id/return', idOk, async (req, res) => {
+    try {
+      const note = isOwner(req) ? String((req.body || {}).note || '').trim().slice(0, 1000) : '';
+      const post = await SocialPost.findOneAndUpdate(
+        { _id: req.params.id, ...mine(req), status: 'submitted' },
+        { $set: { status: 'draft', reviewNote: note, submittedAt: null } },
+        { new: true },
+      );
+      if (!post) return res.status(409).json({ error: 'Only submitted posts can be returned.' });
+      res.json({ post });
+    } catch (e) { send(res, e); }
   });
 
   return router;
