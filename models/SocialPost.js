@@ -19,6 +19,7 @@ const socialPostSchema = new mongoose.Schema(
     form:    { type: mongoose.Schema.Types.Mixed, default: {} },
     summary: { type: String, default: "" },     // list label: start of the text / card title
     thumb:   { type: String, default: "" },     // list thumbnail: card photo, first photo or video poster
+    link:    { type: String, default: "" },     // booking link (list filter: workshop links)
 
     // draft → (teacher) submitted → (owner) posting → posted | failed
     status: {

@@ -13,7 +13,7 @@
 // GET  /api/social/palettes                → each studio's card colours (config/socialPalettes.js)
 // POST /api/social/card     { studio, card }               → renders + saves a card → image object
 // POST /api/social/preview  { post, platforms? }           → formatted payloads + errors/warnings, nothing sent
-// POST /api/social/publish  { studio, post, platforms? }   → { facebook: { ok, url|error, warnings }, … }
+// POST /api/social/publish  { studio, post, platforms?, postId? | form? }   → { facebook: { ok, url|error, warnings }, … }
 //                                                          video posts → { jobId } (uploads take minutes)
 // POST /api/social/video    multipart: video (file), fit? 'blur'|'crop', start?, end?  → { jobId }
 //                           job result = video object for post.video (socialVideo.prepareVideo)
@@ -188,7 +188,8 @@ module.exports = function socialRoutes(requireAdmin) {
 
   router.post('/publish', requireAdmin, async (req, res) => {
     try {
-      const { post, platforms, studio, postId } = req.body || {};
+      const { post, platforms, studio, form } = req.body || {};
+      let { postId } = req.body || {};
       if (!post) return res.status(400).json({ error: 'post is required' });
       const s = pickStudio(studio, true);
       const p = { ...post };
@@ -209,6 +210,12 @@ module.exports = function socialRoutes(requireAdmin) {
           { $set: { status: 'posting', error: '' } },
         );
         if (!claimed) throw fail(409, 'This post has already been posted (or is posting now).');
+      } else if (form) {
+        // Posted straight from the editor: keep a record so it shows in the list and can be reposted
+        const f = cleanForm(form);
+        postId = (await SocialPost.create({
+          studio: s, form: f, ...describe(f), status: 'posting', createdBy: author(req),
+        }))._id;
       }
       const run = async () => {
         let results;
@@ -248,7 +255,7 @@ module.exports = function socialRoutes(requireAdmin) {
   });
 
   // ═══ Saved posts: teacher drafts → owner approval (same flow as Newsletters) ═══
-  // GET    /posts?studio=              → { posts } (no form) — owner: everyone's, waiting first; teacher: their own
+  // GET    /posts?studio=&limit=       → { posts } (no form, limit ≤ 200, default 40) — owner: everyone's, waiting first; teacher: their own
   // GET    /posts/:id                  → { post } with form
   // POST   /posts      { studio, form } → new draft
   // PUT    /posts/:id  { form }         → teacher: own drafts; owner: drafts, submitted, failed
@@ -272,6 +279,7 @@ module.exports = function socialRoutes(requireAdmin) {
       summary: text ? text.slice(0, 120) : f.video ? 'Video post' : 'Post',
       thumb: (f.video && f.video.poster) || f.cardPhoto || (f.cardPhotos && f.cardPhotos[0])
         || (f.photos && f.photos[0] && f.photos[0].url) || '',
+      link: String(f.linkUrl || '').trim().slice(0, 500),
     };
   };
 
@@ -279,7 +287,8 @@ module.exports = function socialRoutes(requireAdmin) {
     try {
       const q = { ...mine(req) };
       if (MULTI && req.query.studio) q.studio = String(req.query.studio);
-      const posts = await SocialPost.find(q).select('-form').sort({ createdAt: -1 }).limit(40).lean();
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 40, 1), 200);
+      const posts = await SocialPost.find(q).select('-form').sort({ createdAt: -1 }).limit(limit).lean();
       if (isOwner(req)) posts.sort((a, b) => (b.status === 'submitted') - (a.status === 'submitted'));
       res.json({ posts });
     } catch (e) { send(res, e); }
