@@ -5,16 +5,20 @@
 // {
 //   title?:    'Saturday Workshop',
 //   body:      'plain text' | '<p>html from the editor</p>',
-//   link?:     { url, title?, description?, imageUrl? },   // booking deep link etc.
+//   link?:     { url, text?, title?, description?, imageUrl? },   // booking deep link etc.
+//                text: words for the link, e.g. 'Sign up'. Bluesky makes the words clickable;
+//                Facebook / YouTube / Instagram show "Sign up: <url>" (they can't hide a URL behind words).
 //   images?:   [{ url, alt?, width?, height?, bytes?, mimeType? }],  // public URLs
 //   hashtags?: ['yoga', '#stpete'],
 //   instagram?: { linkLine?: 'Link in bio', hashtagsInFirstComment?: false },
+//                linkLine overrides the automatic "Sign up — link in bio" line ('' = no line).
 //   langs?:    ['en'],
 //   video?:    { url, poster?, duration, width, height, bytes, mimeType:'video/mp4', alt? },  // socialVideo.prepareVideo
 //   youtube?:  { title?, privacy?: 'public'|'unlisted'|'private' },
 // }
 // A post with `video` goes out as a short: Facebook Reel, Instagram Reel, Bluesky video, YouTube Short.
 // Photos are left out of a video post. YouTube only takes video posts.
+// Body links can be written [Sign up](https://…) in plain text, or <a href> in HTML.
 //
 // Output: { facebook: Result, instagram: Result, bluesky: Result, youtube: Result }
 // Result = { ok: boolean, errors: string[], warnings: string[], payload: object|null }
@@ -74,18 +78,29 @@ function decodeEntities(s) {
     .replace(/&([a-z]+);/gi, (m, n) => (named[n.toLowerCase()] ?? m));
 }
 
-// HTML (or plain text) → plain text. linkMode: 'inline' → "text (url)", 'text' → "text" only.
+const MD_LINK_RE = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;   // [Sign up](https://…)
+
+const bareUrl = u => String(u || '').trim().replace(/^https?:\/\/(www\.)?/i, '').replace(/\/+$/, '').toLowerCase();
+const sameUrl = (a, b) => !!a && !!b && bareUrl(a) === bareUrl(b);
+const isUrlText = (text, href) => !text || text === href || bareUrl(text) === bareUrl(href);
+
+// A link's words → text. 'inline' → "text (url)", 'text' → "text", or a function(text, href).
+function renderLink(linkMode, text, href) {
+  if (typeof linkMode === 'function') return linkMode(text, href);
+  if (linkMode === 'text') return text;
+  return isUrlText(text, href) ? href : `${text} (${href})`;
+}
+
+// HTML (or plain text) → plain text. Links ([words](url) or <a href>) are rendered by linkMode.
 function toPlainText(input, linkMode = 'inline') {
   if (!input) return '';
   let s = String(input);
-  if (!/<[a-z][\s\S]*>/i.test(s)) return tidy(s);
+  const md = str => str.replace(MD_LINK_RE, (_, text, href) => renderLink(linkMode, text.trim(), href));
+  if (!/<[a-z][\s\S]*>/i.test(s)) return tidy(md(s));
 
-  s = s.replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href, inner) => {
-    const text = inner.replace(/<[^>]+>/g, '').trim();
-    if (linkMode === 'text') return text;
-    const bare = href.replace(/^https?:\/\//, '').replace(/\/$/, '');
-    return !text || text === href || text === bare ? href : `${text} (${href})`;
-  });
+  s = s.replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href, inner) =>
+    renderLink(linkMode, inner.replace(/<[^>]+>/g, '').trim(), href));
+  s = md(s);
   s = s
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<li\b[^>]*>/gi, '\n• ')
@@ -118,7 +133,7 @@ function normalizeHashtags(tags = []) {
   return out;
 }
 
-const URL_RE = /https?:\/\/[^\s<>"')\]]+[^\s<>"')\].,;:!?]/g;
+const URL_RE = /https?:\/\/[^\s<>"')\]\uE000-\uE1FF]+[^\s<>"')\].,;:!?\uE000-\uE1FF]/g;
 const TAG_RE = /(^|\s)#([\p{L}\p{N}_]*\p{L}[\p{L}\p{N}_]*)/gu;
 const MENTION_RE = /(^|\s)@[\w.]+/g;
 
@@ -147,6 +162,11 @@ function shortUrl(url, max = 30) {
   return bare.length <= max ? bare : bare.slice(0, max - 1) + '…';
 }
 
+// Words for the booking link ('Sign up'); '' if none.
+const linkTextOf = post => String((post.link && post.link.text) || '').replace(/\s+/g, ' ').trim().replace(/[\s:]+$/, '').slice(0, 40);
+// "Sign up: https://…" where the URL has to show.
+const labelUrl = (post, url) => { const t = linkTextOf(post); return t ? `${t}: ${url}` : url; };
+
 function result(errors, warnings, payload) {
   return { ok: errors.length === 0, errors, warnings, payload: errors.length ? null : payload };
 }
@@ -164,14 +184,18 @@ function result(errors, warnings, payload) {
 
 function formatFacebook(post) {
   const errors = [], warnings = [];
-  const body = toPlainText(post.body, 'inline');
   const tags = normalizeHashtags(post.hashtags).map(t => '#' + t).join(' ');
   const images = post.images || [];
   const link = post.link && post.link.url;
+  const cardMode = !!link && !images.length && !post.video;
+  // Link card: words linked to the booking link stay as plain words — the card is the click.
+  const body = toPlainText(post.body, cardMode
+    ? (text, href) => (sameUrl(href, link) ? (isUrlText(text, href) ? '' : text) : renderLink('inline', text, href))
+    : 'inline');
 
   if (post.video) {
     const [e, w] = checkVideo('facebook', post.video);
-    const linkLine = link && !body.includes(link) ? link : '';
+    const linkLine = link && !body.includes(link) ? labelUrl(post, link) : '';
     const description = joinParts(post.title, body, linkLine, tags);
     if (description.length > LIMITS.facebook.text) e.push(`Text is ${description.length} characters; Facebook allows ${LIMITS.facebook.text}.`);
     return result(e, [...w, ...ignoredPhotosWarning(post)], { type: 'reel', videoUrl: post.video.url, description });
@@ -182,14 +206,14 @@ function formatFacebook(post) {
 
   if (images.length) {
     // Photo posts don't take a `link` param — the URL has to live in the text.
-    const linkLine = link && !body.includes(link) ? link : '';
+    const linkLine = link && !body.includes(link) ? labelUrl(post, link) : '';
     message = joinParts(post.title, body, linkLine, tags);
     payload = images.length === 1
       ? { type: 'photo', params: { url: images[0].url, caption: message, ...(images[0].alt ? { alt_text_custom: images[0].alt } : {}) } }
       : { type: 'photos', message, photos: images.map(i => ({ url: i.url, alt: i.alt || '' })) };
   } else if (link) {
     // Facebook builds the preview card from `link`; keep the URL out of the text.
-    message = joinParts(post.title, body.split(link).join('').trim(), tags);
+    message = joinParts(post.title, tidy(body.split(link).join('')), tags);
     payload = { type: 'feed', params: { message, link } };
   } else {
     message = joinParts(post.title, body, tags);
@@ -253,12 +277,17 @@ function formatInstagram(post) {
     }
   }
 
-  // Links aren't clickable in captions: keep link text, drop URLs.
-  let body = toPlainText(post.body, 'text').replace(URL_RE, '').replace(/\(\s*\)/g, '');
+  // Links aren't clickable in captions: keep link words, drop URLs, point to the bio instead.
+  let bodyHadLink = false;
+  let body = toPlainText(post.body, (text, href) => { bodyHadLink = true; return isUrlText(text, href) ? '' : text; })
+    .replace(URL_RE, () => { bodyHadLink = true; return ''; })
+    .replace(/\(\s*\)/g, '');
   body = tidy(body);
 
   const link = post.link && post.link.url;
-  const linkLine = link ? (opts.linkLine ?? `Book: ${shortUrl(link)}`) : '';
+  const words = linkTextOf(post);
+  const autoLine = words ? `${words} — link in bio` : 'Link in bio';
+  const linkLine = opts.linkLine ?? (link || bodyHadLink ? autoLine : '');
 
   const inlineTags = (body.match(TAG_RE) || []).length;
   let tags = normalizeHashtags(post.hashtags);
@@ -305,6 +334,28 @@ function formatInstagram(post) {
 //   then POST com.atproto.repo.createRecord { repo: did, collection:'app.bsky.feed.post', record }
 // @mentions stay plain text (a mention facet needs the handle resolved to a DID first).
 
+// Link markers (private-use chars, never posted). Each one costs a little room while fitting, which errs short.
+const LK_OPEN = '\uE000', LK_CLOSE = '\uE001', LK_BASE = 0xE100, LK_MAX = 0xFF;
+
+// Strip markers → { text, links:[{ start, end, idx }] } (UTF-16 offsets into text).
+// A link cut open by truncation is dropped; its words stay as plain text.
+function resolveLinkMarks(marked) {
+  let text = '', open = null;
+  const links = [];
+  for (const ch of marked) {
+    const c = ch.codePointAt(0);
+    if (ch === LK_OPEN) { open = { start: text.length, idx: null }; continue; }
+    if (c >= LK_BASE && c <= LK_BASE + LK_MAX) { if (open && open.idx === null) open.idx = c - LK_BASE; continue; }
+    if (ch === LK_CLOSE) {
+      if (open && open.idx !== null && text.length > open.start) links.push({ start: open.start, end: text.length, idx: open.idx });
+      open = null;
+      continue;
+    }
+    text += ch;
+  }
+  return { text, links };
+}
+
 function formatBluesky(post) {
   const errors = [], warnings = [];
   const L = LIMITS.bluesky;
@@ -326,16 +377,22 @@ function formatBluesky(post) {
     if (!img.alt) warnings.push(`Photo ${i + 1} has no alt text.`);
   });
 
-  // Body URLs get displayed short; the facet carries the full URL.
-  const linkTargets = [];                           // [{ display, uri }]
-  const shorten = uri => { const display = shortUrl(uri, 26); linkTargets.push({ display, uri }); return display; };
+  // Linked words ([Sign up](url), <a>) and bare URLs (shown short) are wrapped in markers:
+  // OPEN + index char + words + CLOSE. After fitting, the markers become link facets.
+  const linkTargets = [];                           // uri by index
+  const mark = (words, uri) => {
+    const i = linkTargets.push(uri) - 1;
+    return LK_OPEN + String.fromCharCode(LK_BASE + i) + words + LK_CLOSE;
+  };
+  const cardMode = !!link && !images.length && !video;   // no photos/video → link card
 
-  let body = toPlainText(post.body, 'inline').replace(URL_RE, shorten);
+  let body = toPlainText(post.body, (text, href) => mark(isUrlText(text, href) ? shortUrl(href, 26) : text, href))
+    .replace(URL_RE, uri => (cardMode && sameUrl(uri, link) ? '' : mark(shortUrl(uri, 26), uri)));
+  body = tidy(body);
 
-  // With photos the link must go in the text; without, it becomes a link card.
-  const linkInText = link && (images.length > 0 || video) && !linkTargets.some(t => t.uri === link);
-  const linkLine = linkInText ? shorten(link) : '';
-  if (link && !images.length && !video) body = body.split(shortUrl(link, 26)).join('').trim();
+  // With photos the link must go in the text (as the link words if given); without, it becomes a link card.
+  const linkInText = link && !cardMode && !linkTargets.some(u => sameUrl(u, link));
+  const linkLine = linkInText ? mark(linkTextOf(post) || shortUrl(link, 26), link) : '';
 
   let tags = normalizeHashtags(post.hashtags).filter(t => graphemeLen(t) <= L.tagGraphemes);
   const measure = s => Math.max(graphemeLen(s) / L.graphemes, byteLen(s) / L.bytes) * L.graphemes;
@@ -354,7 +411,7 @@ function formatBluesky(post) {
   const droppedTags = normalizeHashtags(post.hashtags).length - tags.length;
   if (droppedTags > 0) warnings.push(`Dropped ${droppedTags} hashtag(s) to make room.`);
 
-  const text = (fitted + tail).trim();
+  const { text, links } = resolveLinkMarks((fitted + tail).trim());
   if (!text && !images.length && !link && !video) errors.push('Post is empty.');
 
   // Facets — UTF-8 byte offsets.
@@ -365,16 +422,13 @@ function formatBluesky(post) {
       features: [feature],
     });
   };
-  let searchFrom = 0;
-  for (const { display, uri } of linkTargets) {
-    const at = text.indexOf(display, searchFrom);
-    if (at === -1) continue;                        // truncated away
-    addFacet(at, at + display.length, { $type: 'app.bsky.richtext.facet#link', uri });
-    searchFrom = at + display.length;
+  for (const l of links) {
+    if (linkTargets[l.idx]) addFacet(l.start, l.end, { $type: 'app.bsky.richtext.facet#link', uri: linkTargets[l.idx] });
   }
   for (const m of text.matchAll(TAG_RE)) {
-    const start = m.index + m[1].length;
-    addFacet(start, start + 1 + m[2].length, { $type: 'app.bsky.richtext.facet#tag', tag: m[2] });
+    const start = m.index + m[1].length, end = start + 1 + m[2].length;
+    if (links.some(l => start < l.end && end > l.start)) continue;   // facets can't overlap
+    addFacet(start, end, { $type: 'app.bsky.richtext.facet#tag', tag: m[2] });
   }
   facets.sort((a, b) => a.index.byteStart - b.index.byteStart);
 
@@ -452,7 +506,7 @@ function formatYouTube(post) {
 
   const link = post.link && post.link.url;
   const tags = normalizeHashtags(post.hashtags);
-  const linkLine = link && !body.includes(link) ? link : '';
+  const linkLine = link && !body.includes(link) ? labelUrl(post, link) : '';
   const tagLine = tags.map(t => '#' + t).join(' ');
   const head = opts.title || post.title ? body : body.split('\n').slice(body.split('\n').indexOf(firstLine) + 1).join('\n').trim();
   const tail = joinParts(linkLine, tagLine) ? '\n\n' + joinParts(linkLine, tagLine) : '';
